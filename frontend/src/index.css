@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.gradient-bg { 
+  background: radial-gradient(circle at 80% 20%, #ccfbf1 0%, transparent 40%), radial-gradient(circle at 20% 80%, #d1fae5 0%, transparent 40%); 
+}
+.hide-scrollbar::-webkit-scrollbar { 
+  display: none; 
+}
+.map-bg {
+  background-color: #e2e8f0;
+  background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+  background-size: 20px 20px;
+}
