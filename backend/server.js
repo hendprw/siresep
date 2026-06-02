@@ -39,27 +39,25 @@ const upload = multer({ storage: storage });
 app.use('/uploads', express.static(uploadDir));
 
 // ==========================================
-// AUTO-MIGRATION (PENTING: Memperbaiki DB Otomatis)
+// AUTO-MIGRATION
 // ==========================================
 (async () => {
   try {
-    // Memastikan tabel products punya kolom image
     await query('ALTER TABLE products ADD COLUMN IF NOT EXISTS image VARCHAR(255)');
+    await query('ALTER TABLE products ADD COLUMN IF NOT EXISTS requires_prescription BOOLEAN DEFAULT FALSE');
+    // Tambahan kolom Kategori
+    await query('ALTER TABLE products ADD COLUMN IF NOT EXISTS category VARCHAR(100) DEFAULT \'Obat Bebas\'');
     
-    // Memastikan tabel orders punya kolom untuk fitur Checkout Pelanggan
     await query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS prescription_image VARCHAR(255)');
     await query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS total_price NUMERIC');
     await query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS items TEXT');
     
-    console.log('✅ Auto-Migration: Kolom database sudah disesuaikan dan siap menerima pesanan.');
+    console.log('✅ Auto-Migration: Kolom kategori berhasil ditambahkan.');
   } catch (err) {
-    console.log('⚠️ Auto-Migration Info (Abaikan jika tabel baru/belum ada):', err.message);
+    console.log('⚠️ Auto-Migration Info:', err.message);
   }
 })();
 
-// ==========================================
-// SYSTEM & HEALTH CHECK
-// ==========================================
 app.get('/api/health', async (req, res) => {
   try {
     const dbTest = await query('SELECT NOW()');
@@ -128,14 +126,16 @@ app.get('/api/products', async (req, res) => {
 });
 
 app.post('/api/products', upload.single('image'), async (req, res) => {
-  const { name, unit, price, badge, stock } = req.body;
+  const { name, unit, price, badge, stock, requires_prescription, category } = req.body;
   const imagePath = req.file ? `/uploads/${req.file.filename}` : null;
+  const isPrescriptionRequired = requires_prescription === 'true'; 
+
   if (!name || !unit || !price) return res.status(400).json({ status: 'error', message: 'Data produk tidak lengkap' });
   try {
     const result = await query(
-      `INSERT INTO products (name, unit, price, badge, icon_class, stock, image) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [name, unit, price, badge || null, 'fa-pills', stock || 0, imagePath]
+      `INSERT INTO products (name, unit, price, badge, icon_class, stock, image, requires_prescription, category) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [name, unit, price, badge || null, 'fa-pills', stock || 0, imagePath, isPrescriptionRequired, category || 'Obat Bebas']
     );
     res.status(201).json({ status: 'success', data: result.rows[0] });
   } catch (error) {
@@ -145,14 +145,16 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
 
 app.put('/api/products/:id', upload.single('image'), async (req, res) => {
   const { id } = req.params;
-  const { name, unit, price, badge, stock, existing_image } = req.body;
+  const { name, unit, price, badge, stock, requires_prescription, category, existing_image } = req.body;
   const imagePath = req.file ? `/uploads/${req.file.filename}` : (existing_image || null);
+  const isPrescriptionRequired = requires_prescription === 'true';
+
   try {
     const result = await query(
       `UPDATE products 
-       SET name = $1, unit = $2, price = $3, badge = $4, stock = $5, image = $6 
-       WHERE id = $7 RETURNING *`,
-      [name, unit, price, badge || null, stock, imagePath, id]
+       SET name = $1, unit = $2, price = $3, badge = $4, stock = $5, image = $6, requires_prescription = $7, category = $8 
+       WHERE id = $9 RETURNING *`,
+      [name, unit, price, badge || null, stock, imagePath, isPrescriptionRequired, category || 'Obat Bebas', id]
     );
     if (result.rows.length === 0) return res.status(404).json({ status: 'error', message: 'Produk tidak ditemukan' });
     res.status(200).json({ status: 'success', data: result.rows[0] });
@@ -184,33 +186,28 @@ app.get('/api/orders', async (req, res) => {
   }
 });
 
-// [INI ENDPOINT YANG HILANG SEBELUMNYA] CREATE ORDER (CHECKOUT)
 app.post('/api/orders', upload.single('prescription'), async (req, res) => {
   try {
-    const { customer_name, delivery_address, delivery_type, total_price, items } = req.body;
+    const { user_id, customer_name, delivery_address, delivery_type, total_price, items } = req.body;
     const prescriptionPath = req.file ? `/uploads/${req.file.filename}` : null;
 
     if (!customer_name) {
       return res.status(400).json({ status: 'error', message: 'Nama pelanggan tidak valid' });
     }
 
+    const orderId = `#APTX-${Math.floor(1000 + Math.random() * 9000)}`;
+    const dbDeliveryType = (delivery_type === 'Diantar' || delivery_type === 'Delivery') ? 'Delivery' : 'Pickup';
+
     const result = await query(
-      `INSERT INTO orders (customer_name, delivery_address, delivery_type, status, prescription_image, total_price, items) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      `INSERT INTO orders (order_id, user_id, customer_name, delivery_address, delivery_type, status, payment_status, total_amount, prescription_image, total_price, items) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
       [
-        customer_name, 
-        delivery_address || '-', 
-        delivery_type || 'Diantar', 
-        'Cek Resep', 
-        prescriptionPath, 
-        total_price || 0, 
-        items || '[]'
+        orderId, user_id || null, customer_name, delivery_address || '-', dbDeliveryType, 
+        'Cek Resep', 'Belum Dibayar', total_price || 0, prescriptionPath, total_price || 0, items || '[]'
       ]
     );
-
     res.status(201).json({ status: 'success', message: 'Checkout berhasil', data: result.rows[0] });
   } catch (error) {
-    console.error('Error creating order:', error);
     res.status(500).json({ status: 'error', message: 'Gagal melakukan checkout pesanan. Pastikan struktur DB sudah diupdate.' });
   }
 });
