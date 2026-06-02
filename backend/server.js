@@ -45,7 +45,6 @@ app.use('/uploads', express.static(uploadDir));
   try {
     await query('ALTER TABLE products ADD COLUMN IF NOT EXISTS image VARCHAR(255)');
     await query('ALTER TABLE products ADD COLUMN IF NOT EXISTS requires_prescription BOOLEAN DEFAULT FALSE');
-    // Tambahan kolom Kategori
     await query('ALTER TABLE products ADD COLUMN IF NOT EXISTS category VARCHAR(100) DEFAULT \'Obat Bebas\'');
     
     await query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS prescription_image VARCHAR(255)');
@@ -224,6 +223,49 @@ app.put('/api/orders/:id/status', async (req, res) => {
     res.status(200).json({ status: 'success', data: result.rows[0] });
   } catch (error) {
     res.status(500).json({ status: 'error', message: 'Gagal memperbarui status pesanan' });
+  }
+});
+
+// ENDPOINT BARU: KURIR AMBIL TUGAS
+app.put('/api/orders/:id/take-task', async (req, res) => {
+  const { id } = req.params;
+  const { driver_name, driver_vehicle } = req.body;
+  try {
+    let result = await query(
+      `UPDATE orders SET status = 'Kurir Menuju Lokasi', driver_name = $1, driver_vehicle = $2 WHERE order_id = $3 RETURNING *`,
+      [driver_name, driver_vehicle || 'Motor Operasional Siresep', id]
+    );
+    if (result.rows.length === 0) {
+      result = await query(
+        `UPDATE orders SET status = 'Kurir Menuju Lokasi', driver_name = $1, driver_vehicle = $2 WHERE id = $3 RETURNING *`,
+        [driver_name, driver_vehicle || 'Motor Operasional Siresep', id]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ status: 'error', message: 'Pesanan tidak ditemukan' });
+    }
+    res.status(200).json({ status: 'success', data: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ status: 'error', message: 'Gagal mengambil tugas kurir' });
+  }
+});
+
+// ENDPOINT BARU: KURIR SELESAIKAN PESANAN
+app.put('/api/orders/:id/complete-task', async (req, res) => {
+  const { id } = req.params;
+  try {
+    let result = await query(
+      `UPDATE orders SET status = 'Pesanan Tiba' WHERE order_id = $1 RETURNING *`,
+      [id]
+    );
+    if (result.rows.length === 0) {
+      result = await query(
+        `UPDATE orders SET status = 'Pesanan Tiba' WHERE id = $1 RETURNING *`,
+        [id]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ status: 'error', message: 'Pesanan tidak ditemukan' });
+    }
+    res.status(200).json({ status: 'success', data: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ status: 'error', message: 'Gagal menyelesaikan pesanan' });
   }
 });
 

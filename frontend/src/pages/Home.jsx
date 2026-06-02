@@ -154,7 +154,7 @@ function Home() {
 
             {/* Tombol Tugas Kurir */}
             {user && user.role === 'kurir' && (
-              <Link to="/track" className="hidden md:flex bg-orange-50 text-orange-600 hover:bg-orange-100 px-4 py-2 rounded-full text-sm font-bold transition-all items-center gap-2">
+              <Link to="/courier" className="hidden md:flex bg-orange-50 text-orange-600 hover:bg-orange-100 px-4 py-2 rounded-full text-sm font-bold transition-all items-center gap-2">
                 <i className="fa-solid fa-motorcycle"></i> Tugas Saya
               </Link>
             )}

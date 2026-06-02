@@ -32,7 +32,7 @@ function Login() {
         if (role === 'admin' || role === 'pharmacist') {
           navigate('/admin');
         } else if (role === 'kurir') {
-          navigate('/track');
+          navigate('/courier'); // Arahkan ke dashboard kurir yang baru
         } else {
           navigate('/');
         }
