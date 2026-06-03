@@ -14,11 +14,13 @@ function Track() {
   const user = userStr ? JSON.parse(userStr) : null;
   const serverBaseUrl = import.meta.env.VITE_API_BASE_URL.replace('/api', '');
 
-  // Menangkap ID order jika dilempar dari halaman Checkout (Cart.jsx)
+  const userId = user?.id;
+  const userName = user?.name;
+
   const activeOrderId = location.state?.orderId;
 
   useEffect(() => {
-    if (!user) {
+    if (!userId) {
       navigate('/login');
       return;
     }
@@ -29,13 +31,12 @@ function Track() {
         const result = await response.json();
         
         if (result.status === 'success') {
-          // Ambil hanya pesanan milik user yang sedang login
-          const myOrders = result.data.filter(o => o.customer_name === user.name || o.user_id === user.id);
+          const myOrders = result.data.filter(o => o.customer_name === userName || o.user_id === userId);
           setOrdersList(myOrders);
 
-          // Jika ada state orderId (dari Cart), langsung buka detailnya
-          if (activeOrderId) {
-            const current = myOrders.find(o => o.order_id === activeOrderId || o.id === activeOrderId);
+          const targetId = selectedOrder?.order_id || selectedOrder?.id || activeOrderId;
+          if (targetId) {
+            const current = myOrders.find(o => o.order_id === targetId || o.id === targetId);
             if (current) setSelectedOrder(current);
           }
         }
@@ -47,32 +48,33 @@ function Track() {
     };
 
     fetchOrders();
-  }, [activeOrderId, user, navigate]);
 
-  // Helper untuk format tanggal
+    const interval = setInterval(() => {
+      fetchOrders();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [activeOrderId, userId, userName, navigate, selectedOrder?.order_id, selectedOrder?.id]);
+
   const formatDate = (dateString) => {
     if (!dateString) return '-';
     const options = { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' };
     return new Date(dateString).toLocaleDateString('id-ID', options);
   };
 
-  // Helper untuk mengembalikan dari Detail ke List
   const handleBackToList = () => {
     setSelectedOrder(null);
-    // Hapus state history agar saat di-refresh tidak membuka detail lagi
     navigate('/track', { replace: true, state: {} }); 
   };
 
-  // Helper indikator timeline
   const checkStepDone = (currentStatus, targetStep) => {
-    const statuses = ['Cek Resep', 'Sedang Diramu', 'Kurir Menuju Lokasi', 'Pesanan Tiba'];
+    const statuses = ['Pending', 'Cek Resep', 'Sedang Diramu', 'Kurir Menuju Lokasi', 'Pesanan Tiba'];
     return statuses.indexOf(currentStatus) >= statuses.indexOf(targetStep);
   };
 
-  // Filter List Pesanan berdasarkan Tab
   const filteredOrders = ordersList.filter(order => {
     if (activeTab === 'Semua') return true;
-    if (activeTab === 'Diproses' && (order.status === 'Cek Resep' || order.status === 'Sedang Diramu')) return true;
+    if (activeTab === 'Diproses' && (order.status === 'Pending' || order.status === 'Cek Resep' || order.status === 'Sedang Diramu')) return true;
     if (activeTab === 'Dikirim' && order.status === 'Kurir Menuju Lokasi') return true;
     if (activeTab === 'Selesai' && order.status === 'Pesanan Tiba') return true;
     return false;
@@ -91,9 +93,6 @@ function Track() {
     );
   }
 
-  // ==============================================================
-  // VIEW 1: DAFTAR TRANSAKSI (SHOPEE/TOKOPEDIA STYLE)
-  // ==============================================================
   if (!selectedOrder) {
     return (
       <div className="text-apx-dark antialiased bg-[#F8FAFC] min-h-screen pb-20">
@@ -106,7 +105,6 @@ function Track() {
         </nav>
 
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
-          {/* TABS KATEGORI STATUS */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-2 mb-6 flex overflow-x-auto hide-scrollbar">
             {TABS.map(tab => (
               <button
@@ -138,7 +136,6 @@ function Track() {
                 
                 return (
                   <div key={order.order_id} className="bg-white rounded-3xl p-5 sm:p-6 shadow-[0_4px_20px_rgb(0,0,0,0.02)] border border-gray-100 hover:border-apx-brand transition-colors group cursor-pointer" onClick={() => setSelectedOrder(order)}>
-                    {/* Header Card */}
                     <div className="flex justify-between items-center border-b border-gray-100 pb-3 mb-4">
                       <div className="flex items-center gap-3">
                         <i className="fa-solid fa-bag-shopping text-apx-brand text-lg"></i>
@@ -155,7 +152,6 @@ function Track() {
                       </span>
                     </div>
 
-                    {/* Body Card (Items) */}
                     <div className="flex gap-4 items-center">
                       <div className="w-16 h-16 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center shrink-0 overflow-hidden text-2xl text-gray-300">
                         {firstItem?.image ? <img src={`${serverBaseUrl}${firstItem.image}`} alt={firstItem?.name} className="w-full h-full object-cover" /> : <i className={`fa-solid ${firstItem?.icon_class || 'fa-pills'}`}></i>}
@@ -171,7 +167,6 @@ function Track() {
                       </div>
                     </div>
 
-                    {/* Footer Card */}
                     <div className="mt-4 pt-4 border-t border-gray-50 flex items-center justify-between">
                       <span className="text-[10px] font-extrabold bg-gray-100 text-gray-500 px-2 py-1 rounded uppercase tracking-widest">{order.delivery_type === 'Pickup' ? 'Ambil Sendiri' : 'Diantar Kurir'}</span>
                       <button className="bg-apx-dark text-white px-5 py-2 rounded-xl text-xs font-bold group-hover:bg-black transition-colors">
@@ -188,10 +183,6 @@ function Track() {
     );
   }
 
-  // ==============================================================
-  // VIEW 2: DETAIL PELACAKAN (MAPS & TIMELINE)
-  // ==============================================================
-  
   let parsedItems = [];
   try { parsedItems = typeof selectedOrder.items === 'string' ? JSON.parse(selectedOrder.items) : (selectedOrder.items || []); } catch (e) { parsedItems = []; }
   const isPickup = selectedOrder.delivery_type === 'Pickup' || selectedOrder.delivery_type === 'Ambil Sendiri';
@@ -218,7 +209,7 @@ function Track() {
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
           <div>
             <p className="text-sm font-bold text-gray-400 mb-1">Order ID</p>
-            <h1 className="text-3xl font-extrabold tracking-tight text-apx-dark">{selectedOrder.order_id || `#APTX-${selectedOrder.id}`}</h1>
+            <h1 className="text-3xl font-extrabold tracking-tight text-apx-dark">{selectedOrder.order_id || `APTX-${selectedOrder.id}`}</h1>
           </div>
           <div className="bg-white px-5 py-3 rounded-2xl border border-gray-100 shadow-sm inline-flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-teal-50 text-teal-500 flex items-center justify-center text-lg">
@@ -234,7 +225,6 @@ function Track() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* SISI KIRI: MAPS ATAU DIGITAL PICKUP PASS BARCODE */}
           <div className="lg:col-span-2 space-y-6">
             
             {isPickup ? (
@@ -245,8 +235,8 @@ function Track() {
                 </div>
                 <h2 className="text-xl font-extrabold mb-1">Tiket Digital Pengambilan</h2>
                 <p className="text-sm text-gray-400 max-w-sm mx-auto mb-6">
-                  {selectedOrder.status === 'Kurir Menuju Lokasi' || selectedOrder.status === 'Pesanan Tiba' 
-                    ? '🎉 Obat Anda sudah selesai diramu! Silakan datang langsung ke Apotek Siresep untuk mengambil produk.' 
+                  {selectedOrder.status === 'Kurir Menuju Lokasi' || selectedOrder.status === 'Pesanan Tiba' || selectedOrder.status === 'Cek Resep' || selectedOrder.status === 'Sedang Diramu'
+                    ? '🎉 Obat Anda sudah masuk antrean / selesai diramu! Silakan datang langsung ke Apotek Siresep untuk mengambil produk.' 
                     : 'Apoteker kami sedang memproses resep/obat Anda. Mohon tunggu hingga status berubah menjadi "Siap Diambil".'}
                 </p>
 
@@ -282,7 +272,7 @@ function Track() {
                 </div>
                 <div className="absolute bottom-4 right-4 bg-white/90 backdrop-blur-sm px-4 py-2 rounded-xl text-sm font-bold text-apx-dark shadow-sm border border-gray-100 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-apx-brand animate-pulse"></span>
-                  {selectedOrder.status === 'Kurir Menuju Lokasi' ? 'Kurir melaju ke lokasi Anda' : 'Menunggu kurir berangkat'}
+                  {selectedOrder.status === 'Kurir Menuju Lokasi' ? 'Kurir melaju ke lokasi Anda' : selectedOrder.status === 'Pending' ? 'Menunggu Pembayaran' : 'Menunggu kurir berangkat'}
                 </div>
               </div>
             )}
@@ -292,12 +282,22 @@ function Track() {
               <div className="relative pl-4 space-y-8 before:absolute before:inset-0 before:ml-[1.4rem] before:w-0.5 before:bg-gray-100">
                 
                 <div className="relative flex items-start gap-6 z-10">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ring-4 ring-white shrink-0 shadow-sm ${checkStepDone(selectedOrder.status, 'Pending') ? 'bg-apx-brand text-white' : 'bg-gray-100 text-gray-400'}`}>
+                    <i className="fa-solid fa-check"></i>
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-apx-dark">Menunggu Pembayaran</h3>
+                    <p className="text-sm font-medium text-gray-400 mt-1">Invoice pesanan digital diterbitkan dan siap dibayarkan.</p>
+                  </div>
+                </div>
+
+                <div className="relative flex items-start gap-6 z-10">
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ring-4 ring-white shrink-0 shadow-sm ${checkStepDone(selectedOrder.status, 'Cek Resep') ? 'bg-apx-brand text-white' : 'bg-gray-100 text-gray-400'}`}>
                     <i className="fa-solid fa-check"></i>
                   </div>
                   <div>
-                    <h3 className="font-bold text-apx-dark">Pesanan Diterima</h3>
-                    <p className="text-sm font-medium text-gray-400 mt-1">Sistem apotek telah memvalidasi pembayaran dan mencatat pesanan baru.</p>
+                    <h3 className="font-bold text-apx-dark">Pesanan Diterima (Cek Resep)</h3>
+                    <p className="text-sm font-medium text-gray-400 mt-1">Sistem apotek telah memvalidasi pembayaran dan masuk antrean pengecekan resep.</p>
                   </div>
                 </div>
 
@@ -343,7 +343,7 @@ function Track() {
             </div>
           </div>
 
-          {/* SISI KANAN: PANEL DETAIL INFO KASIR / DRIVER & HARGA */}
+          {/* SISI KANAN: FIX BUG 2 INFO KURIR DINAMIS BERDASARKAN DATABASE (TIDAK HARDCODED LAGI) */}
           <div className="space-y-6">
             
             {isPickup ? (
@@ -364,17 +364,19 @@ function Track() {
               <div className="bg-apx-dark rounded-[2rem] p-6 text-white shadow-md relative overflow-hidden">
                 <h3 className="text-xs font-extrabold text-gray-400 uppercase tracking-widest mb-4">Informasi Kurir</h3>
                 <div className="flex items-center gap-4 mb-6 relative z-10">
-                  <img src="https://ui-avatars.com/api/?name=Ahmad+F&background=00D084&color=021B19&bold=true" className="w-14 h-14 rounded-full border-2 border-white/20" alt="Kurir" />
+                  <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(selectedOrder.driver_name || 'Mencari')}&background=00D084&color=021B19&bold=true`} className="w-14 h-14 rounded-full border-2 border-white/20" alt="Kurir" />
                   <div>
-                    <p className="font-extrabold text-lg">Ahmad Fauzi</p>
-                    <p className="text-sm text-apx-brand font-medium">B 1234 XYZ • Honda Beat</p>
+                    <p className="font-extrabold text-lg">{selectedOrder.driver_name || 'Mencari Kurir...'}</p>
+                    <p className="text-sm text-apx-brand font-medium">{selectedOrder.driver_vehicle || 'Pesanan sedang dipersiapkan apotek'}</p>
                   </div>
                 </div>
-                <div className="flex gap-3 relative z-10">
-                  <button className="flex-1 bg-white hover:bg-gray-100 text-apx-dark py-3 rounded-xl font-bold text-sm transition-all flex justify-center items-center gap-2">
-                    <i className="fa-solid fa-comment-dots"></i> Hubungi Chat
-                  </button>
-                </div>
+                {selectedOrder.driver_name && (
+                  <div className="flex gap-3 relative z-10">
+                    <button className="flex-1 bg-white hover:bg-gray-100 text-apx-dark py-3 rounded-xl font-bold text-sm transition-all flex justify-center items-center gap-2">
+                      <i className="fa-solid fa-comment-dots"></i> Hubungi Chat
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 

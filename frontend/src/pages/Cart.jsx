@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -50,7 +50,7 @@ function MapFlyTo({ position }) {
 function Cart() {
   const [cartItems, setCartItems] = useState([]);
   const [deliveryType, setDeliveryType] = useState('Diantar');
-  const [paymentMethod, setPaymentMethod] = useState('QRIS'); 
+  const [paymentMethod, setPaymentMethod] = useState('Cashless'); 
   const [address, setAddress] = useState('');
   const [isLocating, setIsLocating] = useState(false);
   const [distanceKm, setDistanceKm] = useState(null); 
@@ -58,6 +58,10 @@ function Cart() {
   const [prescriptionFile, setPrescriptionFile] = useState(null);
   const [prescriptionPreview, setPrescriptionPreview] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [showPollingModal, setShowPollingModal] = useState(false);
+  const [pollingOrderId, setPollingOrderId] = useState('');
+  const pollingIntervalRef = useRef(null);
   
   const navigate = useNavigate();
   const userStr = localStorage.getItem('siresep_user');
@@ -67,6 +71,8 @@ function Cart() {
   useEffect(() => {
     const savedCart = localStorage.getItem('siresep_cart');
     if (savedCart && JSON.parse(savedCart).length > 0) setCartItems(JSON.parse(savedCart));
+    
+    return () => { if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current); };
   }, []);
 
   const updateCart = (newCart) => {
@@ -104,7 +110,7 @@ function Cart() {
         setMapPosition([lat, lon]);
         setDistanceKm(calculateDistance(APOTEK_COORDS.lat, APOTEK_COORDS.lon, lat, lon)); 
         try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`);
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
           const data = await res.json();
           if (data && data.display_name) setAddress(data.display_name);
         } catch (error) { setAddress(`Titik Koordinat: ${lat}, ${lon}`); } 
@@ -123,16 +129,51 @@ function Cart() {
   }
   const total = subtotal + serviceFee;
 
-  // CEK APAKAH ADA OBAT KERAS (RESEP DOKTER) DI KERANJANG
   const needsPrescription = cartItems.some(item => item.requires_prescription === true || item.requires_prescription === 'true');
+
+  const startPaymentPolling = (orderId) => {
+    setPollingOrderId(orderId);
+    setShowPollingModal(true);
+
+    pollingIntervalRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/orders/check-status/${encodeURIComponent(orderId)}`);
+        const result = await res.json();
+        if (res.ok && result.status === 'success') {
+          if (result.data.payment_status === 'Sudah Dibayar') {
+            clearInterval(pollingIntervalRef.current);
+            setShowPollingModal(false);
+            alert("Pembayaran Terverifikasi! Pesanan Anda segera diproses.");
+            navigate('/track', { state: { orderId: orderId } });
+          }
+        }
+      } catch (err) {
+        console.error("Gagal melakukan polling status pembayaran:", err);
+      }
+    }, 3000);
+  };
+
+  const forceCheckPayment = async () => {
+    if (!pollingOrderId) return;
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/orders/check-status/${encodeURIComponent(pollingOrderId)}`);
+      const result = await res.json();
+      if (res.ok && result.data.payment_status === 'Sudah Dibayar') {
+        clearInterval(pollingIntervalRef.current);
+        setShowPollingModal(false);
+        navigate('/track', { state: { orderId: pollingOrderId } });
+      } else {
+        alert("Pembayaran belum terdeteksi. Silakan selesaikan tagihan pada tab Pakasir.");
+      }
+    } catch (err) { alert("Gagal memvalidasi pembayaran."); }
+  };
 
   const handleCheckout = async () => {
     if (cartItems.length === 0) return alert("Keranjang belanja Anda kosong!");
     if (deliveryType === 'Diantar' && !address.trim()) return alert("Mohon pilih alamat di peta!");
     
-    // VALIDASI WAJIB UPLOAD RESEP
     if (needsPrescription && !prescriptionFile) {
-      return alert("PERINGATAN: Keranjang Anda berisi Obat Keras. Anda wajib mengunggah foto resep dokter yang valid sebelum checkout!");
+      return alert("PERINGATAN: Keranjang Anda berisi Obat Keras. Anda wajib mengunggah foto resep dokter!");
     }
 
     setIsSubmitting(true);
@@ -147,17 +188,25 @@ function Cart() {
     formData.append('delivery_address', finalAddress);
     formData.append('delivery_type', deliveryType);
     formData.append('total_price', total);
+    formData.append('payment_method', paymentMethod); 
     formData.append('items', JSON.stringify(cartItems));
+    
     if (prescriptionFile) formData.append('prescription', prescriptionFile);
 
     try {
       const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/orders`, { method: 'POST', body: formData });
       const result = await res.json();
       if (res.ok && result.status === 'success') {
-        alert("Checkout Berhasil! Pesanan Anda telah tercatat.");
         localStorage.removeItem('siresep_cart');
         setCartItems([]);
-        navigate('/track', { state: { orderId: result.data.order_id } });
+        
+        if (paymentMethod === 'Cashless' && result.data.payment_url) {
+           window.open(result.data.payment_url, '_blank');
+           startPaymentPolling(result.data.order_id);
+        } else {
+           alert("Checkout Berhasil! Silakan bayar tunai saat pesanan tiba.");
+           navigate('/track', { state: { orderId: result.data.order_id } });
+        }
       } else alert("Gagal checkout: " + result.message);
     } catch (err) { alert("Terjadi kesalahan koneksi server."); } 
     finally { setIsSubmitting(false); }
@@ -218,14 +267,11 @@ function Cart() {
                 </div>
               </div>
 
-              {/* RENDER KONDISIONAL UNGGAH RESEP */}
               {needsPrescription && (
-                <div className="bg-rose-50 rounded-3xl p-6 sm:p-8 border border-rose-200 shadow-sm relative overflow-hidden ring-4 ring-rose-50 animate-pulse-slow">
+                <div className="bg-rose-50 rounded-3xl p-6 sm:p-8 border border-rose-200 shadow-sm relative overflow-hidden ring-4 ring-rose-50">
                   <div className="absolute right-0 top-0 w-32 h-32 bg-rose-100 rounded-bl-full opacity-50 pointer-events-none"></div>
-                  <h2 className="font-extrabold text-lg mb-2 text-rose-800">
-                    <i className="fa-solid fa-file-prescription mr-2"></i> Peringatan Obat Keras
-                  </h2>
-                  <p className="text-sm font-medium text-rose-600 mb-6">Keranjang Anda mengandung obat yang <strong>Wajib menggunakan Resep Dokter</strong>. Silakan unggah foto resep asli Anda di bawah ini agar pesanan dapat divalidasi oleh Apoteker.</p>
+                  <h2 className="font-extrabold text-lg mb-2 text-rose-800"><i className="fa-solid fa-file-prescription mr-2"></i> Peringatan Obat Keras</h2>
+                  <p className="text-sm font-medium text-rose-600 mb-6">Keranjang Anda mengandung obat yang <strong>Wajib menggunakan Resep Dokter</strong>.</p>
                   
                   <div className="flex flex-col sm:flex-row items-center gap-6">
                     {prescriptionPreview ? (
@@ -237,7 +283,7 @@ function Cart() {
                       </div>
                     ) : (
                       <label className="w-full h-24 border-2 border-dashed border-rose-300 hover:border-rose-500 bg-white rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-colors group">
-                        <i className="fa-solid fa-cloud-arrow-up text-2xl text-rose-400 group-hover:text-rose-600 mb-1 transition-colors"></i>
+                        <i className="fa-solid fa-cloud-arrow-up text-2xl text-rose-400 group-hover:text-rose-600 mb-1"></i>
                         <span className="text-sm font-bold text-rose-500 group-hover:text-rose-700">Klik untuk unggah foto resep wajib</span>
                         <input type="file" className="hidden" accept="image/*" onChange={handlePrescriptionUpload} />
                       </label>
@@ -270,10 +316,10 @@ function Cart() {
                 </div>
 
                 {deliveryType === 'Diantar' && (
-                  <div className="animate-fade-in border-t border-gray-100 pt-6">
+                  <div className="border-t border-gray-100 pt-6">
                     <div className="flex justify-between items-center mb-3">
                       <h3 className="font-bold text-apx-dark">Pilih Lokasi Tujuan</h3>
-                      <button onClick={handleGetLocation} disabled={isLocating} className="text-xs font-bold text-apx-brand bg-teal-50 px-3 py-1.5 rounded-lg hover:bg-teal-100 transition-colors">
+                      <button onClick={handleGetLocation} disabled={isLocating} className="text-xs font-bold text-apx-brand bg-teal-50 px-3 py-1.5 rounded-lg hover:bg-teal-100">
                         {isLocating ? <i className="fa-solid fa-circle-notch fa-spin"></i> : <i className="fa-solid fa-location-crosshairs"></i>} Gunakan GPS
                       </button>
                     </div>
@@ -284,22 +330,23 @@ function Cart() {
                         <MapFlyTo position={mapPosition} />
                       </MapContainer>
                     </div>
-                    <textarea rows="2" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Geser pin peta atau tuliskan alamat detail rumah Anda..." className="w-full bg-gray-50 border border-gray-200 text-apx-dark rounded-xl px-4 py-3 focus:outline-none focus:border-apx-brand text-sm font-medium resize-none transition-all"></textarea>
+                    <textarea rows="2" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Geser pin peta atau tuliskan alamat detail rumah Anda..." className="w-full bg-gray-50 border border-gray-200 text-apx-dark rounded-xl px-4 py-3 focus:outline-none focus:border-apx-brand text-sm font-medium resize-none"></textarea>
                   </div>
                 )}
               </div>
 
               <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-100 shadow-sm">
-                <h2 className="font-extrabold text-lg mb-4 border-b border-gray-100 pb-4"><i className="fa-solid fa-wallet text-apx-brand mr-2"></i> Metode Pembayaran</h2>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div onClick={() => setPaymentMethod('QRIS')} className={`cursor-pointer rounded-2xl border-2 p-4 text-center transition-all ${paymentMethod === 'QRIS' ? 'border-apx-brand bg-teal-50/30 shadow-md' : 'border-gray-100 hover:border-gray-200'}`}>
-                    <i className="fa-solid fa-qrcode text-3xl mb-2 text-apx-dark"></i><h4 className="font-extrabold text-apx-dark text-sm">QRIS</h4><p className="text-[10px] font-bold text-gray-400 mt-1 uppercase">Gopay, OVO, Dana</p>
+                <h2 className="font-extrabold text-lg mb-4 border-b border-gray-100 pb-4"><i className="fa-solid fa-wallet text-apx-brand mr-2"></i> Opsi Pembayaran</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div onClick={() => setPaymentMethod('Cashless')} className={`cursor-pointer rounded-2xl border-2 p-5 text-center transition-all ${paymentMethod === 'Cashless' ? 'border-apx-brand bg-teal-50/30 shadow-md ring-2 ring-apx-brand/20' : 'border-gray-100 hover:border-gray-200'}`}>
+                    <i className="fa-solid fa-credit-card text-3xl mb-2 text-apx-dark"></i>
+                    <h4 className="font-extrabold text-apx-dark text-sm">Pembayaran Digital (Cashless)</h4>
+                    <p className="text-[10px] font-bold text-gray-400 mt-1 uppercase">QRIS, Virtual Account, & Bank via Pakasir</p>
                   </div>
-                  <div onClick={() => setPaymentMethod('Transfer Bank')} className={`cursor-pointer rounded-2xl border-2 p-4 text-center transition-all ${paymentMethod === 'Transfer Bank' ? 'border-apx-brand bg-teal-50/30 shadow-md' : 'border-gray-100 hover:border-gray-200'}`}>
-                    <i className="fa-solid fa-building-columns text-3xl mb-2 text-apx-dark"></i><h4 className="font-extrabold text-apx-dark text-sm">Virtual Account</h4><p className="text-[10px] font-bold text-gray-400 mt-1 uppercase">BCA, Mandiri, BNI</p>
-                  </div>
-                  <div onClick={() => setPaymentMethod('COD')} className={`cursor-pointer rounded-2xl border-2 p-4 text-center transition-all ${paymentMethod === 'COD' ? 'border-apx-brand bg-teal-50/30 shadow-md' : 'border-gray-100 hover:border-gray-200'}`}>
-                    <i className="fa-solid fa-hand-holding-dollar text-3xl mb-2 text-apx-dark"></i><h4 className="font-extrabold text-apx-dark text-sm">Bayar di Tempat</h4><p className="text-[10px] font-bold text-gray-400 mt-1 uppercase">Cash On Delivery</p>
+                  <div onClick={() => setPaymentMethod('COD')} className={`cursor-pointer rounded-2xl border-2 p-5 text-center transition-all ${paymentMethod === 'COD' ? 'border-apx-brand bg-teal-50/30 shadow-md ring-2 ring-apx-brand/20' : 'border-gray-100 hover:border-gray-200'}`}>
+                    <i className="fa-solid fa-hand-holding-dollar text-3xl mb-2 text-apx-dark"></i>
+                    <h4 className="font-extrabold text-apx-dark text-sm">Bayar di Tempat (COD)</h4>
+                    <p className="text-[10px] font-bold text-gray-400 mt-1 uppercase">Bayar Tunai Saat Kurir Tiba</p>
                   </div>
                 </div>
               </div>
@@ -314,14 +361,46 @@ function Cart() {
                   <div className="flex justify-between items-center"><span>{deliveryType === 'Diantar' ? 'Ongkos Kirim' : 'Biaya Layanan'}</span><span className="text-white font-bold">Rp{serviceFee.toLocaleString('id-ID')}</span></div>
                 </div>
                 <div className="flex justify-between items-end mb-8 relative z-10"><span className="font-bold text-gray-300">Total Tagihan</span><span className="font-extrabold text-3xl tracking-tight text-apx-brand">Rp{total.toLocaleString('id-ID')}</span></div>
-                <button onClick={handleCheckout} disabled={isSubmitting || cartItems.length === 0} className="w-full bg-apx-brand hover:bg-white text-apx-dark disabled:opacity-50 disabled:cursor-not-allowed py-4 rounded-2xl font-extrabold text-lg transition-all flex items-center justify-center gap-2 relative z-10">
-                  {isSubmitting ? <i className="fa-solid fa-circle-notch fa-spin"></i> : <>Bayar Pakai {paymentMethod} <i className="fa-solid fa-arrow-right"></i></>}
+                <button onClick={handleCheckout} disabled={isSubmitting || cartItems.length === 0} className="w-full bg-apx-brand hover:bg-white text-apx-dark disabled:opacity-50 py-4 rounded-2xl font-extrabold text-lg transition-all flex items-center justify-center gap-2 relative z-10">
+                  {isSubmitting ? <i className="fa-solid fa-circle-notch fa-spin"></i> : <>Konfirmasi Pesanan <i className="fa-solid fa-arrow-right"></i></>}
                 </button>
               </div>
             </div>
           </div>
         )}
       </div>
+
+      {/* SCREEN POLLING MODAL OVERLAY */}
+      {showPollingModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-apx-dark/80 backdrop-blur-md p-4">
+          <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl text-center border border-gray-100">
+            <div className="w-24 h-24 bg-teal-50 rounded-full flex items-center justify-center mx-auto mb-6 relative">
+              <div className="absolute inset-0 rounded-full border-4 border-apx-brand border-t-transparent animate-spin"></div>
+              <i className="fa-solid fa-wallet text-3xl text-apx-brand"></i>
+            </div>
+            <h3 className="text-2xl font-extrabold text-apx-dark mb-2">Menunggu Pembayaran</h3>
+            <p className="text-sm font-semibold text-gray-500 mb-2">Invoice ID: <span className="text-apx-dark font-bold">{pollingOrderId}</span></p>
+            <p className="text-xs font-medium text-gray-400 px-4 leading-relaxed mb-6">
+              Sistem telah membuka gerbang pembayaran Pakasir di tab baru Chrome Anda. Silakan selesaikan transaksi di sana. Halaman ini akan mendeteksi pelunasan secara otomatis.
+            </p>
+            <div className="space-y-2">
+              <button onClick={forceCheckPayment} className="w-full bg-apx-dark hover:bg-black text-white font-bold py-3 rounded-xl text-sm shadow-md transition-all">
+                <i className="fa-solid fa-rotate-right mr-1"></i> Cek Status Manual
+              </button>
+              <button 
+                onClick={() => {
+                  if(pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+                  setShowPollingModal(false);
+                  navigate('/track', { state: { orderId: pollingOrderId } });
+                }} 
+                className="w-full bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-2.5 rounded-xl text-xs transition-all"
+              >
+                Bayar Nanti / Lacak Pesanan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

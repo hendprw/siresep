@@ -12,8 +12,17 @@ function Admin() {
   const [isEditing, setIsEditing] = useState(false);
   const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
   const [selectedPrescription, setSelectedPrescription] = useState(null);
+  
+  // FIX ADM 4 & ADM 5: State filter rentang transaksi harian
+  const [filterDate, setFilterDate] = useState('');
 
-  // Form ditambah category
+  // FIX ADM 7: Tracker ID Pesanan untuk Otomasi Verifikasi
+  const [selectedOrderIdForPrescription, setSelectedOrderIdForPrescription] = useState('');
+
+  // FIX ADM 8: State penampung Laporan Keuangan
+  const [reportData, setReportData] = useState(null);
+  const [loadingReport, setLoadingReport] = useState(false);
+
   const [productForm, setProductForm] = useState({
     id: '', name: '', unit: '', price: '', stock: '', badge: '', image: '', requires_prescription: false, category: 'Obat Bebas'
   });
@@ -26,10 +35,15 @@ function Admin() {
   const user = userStr ? JSON.parse(userStr) : null;
   const serverBaseUrl = import.meta.env.VITE_API_BASE_URL.replace('/api', '');
 
-  const fetchOrders = async () => {
+  // Ditambahkan query string untuk memfilter riwayat harian
+  const fetchOrders = async (dateParam = '') => {
     setLoadingOrders(true);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/orders`);
+      let url = `${import.meta.env.VITE_API_BASE_URL}/orders`;
+      if (dateParam) {
+        url += `?date=${dateParam}`;
+      }
+      const response = await fetch(url);
       const result = await response.json();
       if (result.status === 'success') setOrders(result.data);
     } catch (error) { console.error('Gagal memuat pesanan:', error); } 
@@ -46,9 +60,24 @@ function Admin() {
     finally { setLoadingProducts(false); }
   };
 
+  // Mengambil rekapan data penjualan mutlak dari database
+  const fetchReport = async () => {
+    setLoadingReport(true);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/admin/reports`);
+      const result = await response.json();
+      if (result.status === 'success') setReportData(result.data);
+    } catch (error) { console.error('Gagal memuat laporan:', error); }
+    finally { setLoadingReport(false); }
+  };
+
   useEffect(() => {
-    fetchOrders();
-    fetchProducts();
+    if (user && (user.role === 'admin' || user.role === 'pharmacist')) {
+      fetchOrders();
+      fetchProducts();
+    } else {
+      navigate('/login');
+    }
   }, []);
 
   const handleUpdateOrderStatus = async (orderId, currentStatus) => {
@@ -63,7 +92,7 @@ function Admin() {
       const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/orders/${encodeURIComponent(orderId)}/status`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: nextStatus })
       });
-      if (res.ok) fetchOrders();
+      if (res.ok) fetchOrders(filterDate);
     } catch (err) { console.error('Gagal update status:', err); }
   };
 
@@ -71,11 +100,12 @@ function Admin() {
     if (!orderId || !window.confirm(`Batalkan pesanan (ID: ${orderId})?`)) return;
     try {
       const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/orders/${encodeURIComponent(orderId)}`, { method: 'DELETE' });
-      if (res.ok) fetchOrders();
+      if (res.ok) fetchOrders(filterDate);
     } catch (err) { console.error('Gagal menghapus pesanan:', err); }
   };
 
-  const openPrescriptionViewer = (imageUrl) => {
+  const openPrescriptionViewer = (orderId, imageUrl) => {
+    setSelectedOrderIdForPrescription(orderId);
     setSelectedPrescription(`${serverBaseUrl}${imageUrl}`);
     setShowPrescriptionModal(true);
   };
@@ -149,7 +179,6 @@ function Admin() {
     navigate('/login');
   };
 
-  // Pilihan Kategori Tetap
   const KATEGORI_PILIHAN = [
     'Obat Bebas', 'Obat Keras', 'Suplemen & Vitamin', 'Alat Kesehatan', 'Perawatan Tubuh', 'Ibu & Anak', 'Lainnya'
   ];
@@ -172,6 +201,10 @@ function Admin() {
             </button>
             <button onClick={() => setActiveTab('products')} className={`w-full group flex items-center px-4 py-3 text-sm font-bold rounded-2xl transition-all ${activeTab === 'products' ? 'bg-white/10 text-white border border-white/5 backdrop-blur-sm' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
               <i className="fa-solid fa-box-open mr-3 text-lg w-5 text-center"></i> Inventori Produk
+            </button>
+            {/* Navigasi Tambahan untuk Mengakses Laporan Penjualan */}
+            <button onClick={() => { setActiveTab('reports'); fetchReport(); }} className={`w-full group flex items-center px-4 py-3 text-sm font-bold rounded-2xl transition-all ${activeTab === 'reports' ? 'bg-white/10 text-white border border-white/5 backdrop-blur-sm' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+              <i className="fa-solid fa-chart-line mr-3 text-lg w-5 text-center"></i> Laporan Penjualan
             </button>
           </nav>
         </div>
@@ -201,11 +234,24 @@ function Admin() {
         </header>
 
         <div className="flex-1 overflow-y-auto px-8 pb-8">
-          {activeTab === 'orders' ? (
+          {activeTab === 'orders' && (
             <div className="bg-white rounded-[2rem] shadow-[0_4px_20px_rgb(0,0,0,0.02)] border border-gray-100 overflow-hidden p-2">
-              <div className="px-6 py-5 flex justify-between items-center">
+              <div className="px-6 py-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <h2 className="font-extrabold text-lg text-apx-dark">Antrean Pesanan Masuk</h2>
-                <button onClick={fetchOrders} className="text-sm font-bold text-apx-dark bg-gray-50 hover:bg-gray-100 px-4 py-2 rounded-xl transition-colors"><i className="fa-solid fa-rotate-right"></i> Refresh</button>
+                {/* FIX ADM 4 & ADM 5: UI Komponen Datepicker untuk Filter Transaksi Harian */}
+                <div className="flex items-center gap-3 flex-wrap">
+                  <input 
+                    type="date" 
+                    value={filterDate} 
+                    onChange={(e) => {
+                      setFilterDate(e.target.value);
+                      fetchOrders(e.target.value);
+                    }}
+                    className="bg-gray-50 border border-gray-200 text-sm font-semibold rounded-xl px-3 py-2 text-apx-dark focus:outline-none focus:border-apx-brand"
+                  />
+                  <button onClick={() => { setFilterDate(''); fetchOrders(''); }} className="text-xs font-bold text-gray-500 bg-gray-100 hover:bg-gray-200 px-3 py-2 rounded-xl transition-colors">Reset</button>
+                  <button onClick={() => fetchOrders(filterDate)} className="text-sm font-bold text-apx-dark bg-gray-50 hover:bg-gray-100 px-4 py-2 rounded-xl transition-colors"><i className="fa-solid fa-rotate-right"></i> Refresh</button>
+                </div>
               </div>
               
               {loadingOrders ? (
@@ -242,7 +288,7 @@ function Admin() {
                               <td className="px-4 py-4 text-right rounded-r-2xl">
                                 <div className="flex items-center justify-end gap-2">
                                   {order.prescription_image ? (
-                                    <button onClick={() => openPrescriptionViewer(order.prescription_image)} className="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-4 py-2 rounded-xl text-xs font-bold"><i className="fa-solid fa-eye"></i> Cek Resep</button>
+                                    <button onClick={() => openPrescriptionViewer(finalOrderId, order.prescription_image)} className="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-4 py-2 rounded-xl text-xs font-bold"><i className="fa-solid fa-eye"></i> Cek Resep</button>
                                   ) : <span className="text-[10px] text-gray-400 font-medium italic mr-2">Tanpa Resep</span>}
                                   <button onClick={() => handleUpdateOrderStatus(finalOrderId, order.status)} disabled={order.status === 'Pesanan Tiba'} className="bg-apx-dark hover:bg-black text-white px-4 py-2 rounded-xl text-xs font-bold disabled:opacity-50">Ubah Status</button>
                                   <button onClick={() => handleDeleteOrder(finalOrderId)} className="bg-white border border-rose-200 text-rose-500 hover:bg-rose-50 px-3 py-2 rounded-xl text-xs font-bold"><i className="fa-solid fa-trash-can"></i></button>
@@ -258,7 +304,9 @@ function Admin() {
                 </div>
               )}
             </div>
-          ) : (
+          )}
+
+          {activeTab === 'products' && (
             <div className="bg-white rounded-[2rem] shadow-[0_4px_20px_rgb(0,0,0,0.02)] border border-gray-100 overflow-hidden p-2">
               <div className="px-6 py-5 flex justify-between items-center">
                 <h2 className="font-extrabold text-lg text-apx-dark">Inventori Obat & Produk</h2>
@@ -319,6 +367,55 @@ function Admin() {
               )}
             </div>
           )}
+
+          {/* FIX ADM 8: Panel Dashboard Visual Analisis Laporan Keuangan */}
+          {activeTab === 'reports' && (
+            <div className="bg-white rounded-[2rem] shadow-[0_4px_20px_rgb(0,0,0,0.02)] border border-gray-100 overflow-hidden p-6">
+              <h2 className="font-extrabold text-lg text-apx-dark mb-4">Laporan Analisis Penjualan</h2>
+              {loadingReport || !reportData ? (
+                <div className="flex justify-center py-10"><i className="fa-solid fa-circle-notch fa-spin text-3xl text-apx-brand"></i></div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="bg-emerald-50 border border-emerald-100 p-5 rounded-2xl">
+                      <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Total Pendapatan (Lunas)</p>
+                      <p className="text-3xl font-extrabold text-slate-900 mt-2">Rp{Number(reportData.summary.total_revenue).toLocaleString('id-ID')}</p>
+                    </div>
+                    <div className="bg-blue-50 border border-blue-100 p-5 rounded-2xl">
+                      <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">Total Transaksi Berhasil</p>
+                      <p className="text-3xl font-extrabold text-slate-900 mt-2">{reportData.summary.total_orders} Pesanan</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="font-bold text-sm text-gray-500 uppercase tracking-wider mb-3">Grafik Penjualan 7 Hari Terakhir</h3>
+                    <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs font-semibold text-gray-600">
+                          <thead>
+                            <tr className="border-b border-gray-200 text-gray-400 uppercase tracking-wider">
+                              <th className="pb-2">Tanggal</th>
+                              <th className="pb-2">Jumlah Transaksi</th>
+                              <th className="pb-2 text-right">Pendapatan</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {reportData.daily.map((d, i) => (
+                              <tr key={i} className="border-b border-gray-100 last:border-0">
+                                <td className="py-2.5">{new Date(d.date).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}</td>
+                                <td className="py-2.5">{d.count} Transaksi</td>
+                                <td className="py-2.5 text-right font-bold text-emerald-600">Rp{Number(d.revenue).toLocaleString('id-ID')}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </main>
 
@@ -332,6 +429,29 @@ function Admin() {
             </div>
             <div className="bg-gray-100 rounded-2xl flex-1 overflow-auto flex items-center justify-center p-2 border border-gray-200">
               <img src={selectedPrescription} alt="Resep" className="max-w-full max-h-full object-contain rounded-xl" />
+            </div>
+            {/* FIX ADM 7: Tombol interaktif untuk memproses verifikasi resep dokter */}
+            <div className="mt-4 flex justify-end gap-2 shrink-0">
+              <button 
+                onClick={async () => {
+                  if (!selectedOrderIdForPrescription) return;
+                  try {
+                    const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/orders/${encodeURIComponent(selectedOrderIdForPrescription)}/verify-prescription`, {
+                      method: 'PUT'
+                    });
+                    if (res.ok) {
+                      alert('Resep berhasil diverifikasi! Status pesanan berubah menjadi Sedang Diramu.');
+                      setShowPrescriptionModal(false);
+                      fetchOrders(filterDate);
+                    }
+                  } catch (err) {
+                    console.error(err);
+                  }
+                }}
+                className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-4 py-2.5 rounded-xl text-sm shadow-md"
+              >
+                <i className="fa-solid fa-circle-check mr-1"></i> Verifikasi Resep & Setujui
+              </button>
             </div>
           </div>
         </div>
