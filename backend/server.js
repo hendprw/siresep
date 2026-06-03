@@ -46,17 +46,32 @@ app.use('/uploads', express.static(uploadDir));
     await query('ALTER TABLE products ADD COLUMN IF NOT EXISTS image VARCHAR(255)');
     await query('ALTER TABLE products ADD COLUMN IF NOT EXISTS requires_prescription BOOLEAN DEFAULT FALSE');
     await query('ALTER TABLE products ADD COLUMN IF NOT EXISTS category VARCHAR(100) DEFAULT \'Obat Bebas\'');
-    
+
     await query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS prescription_image VARCHAR(255)');
     await query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS total_price NUMERIC');
     await query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS items TEXT');
-    
-    console.log('✅ Auto-Migration: Kolom kategori berhasil ditambahkan.');
+
+    // FIX: Hapus constraint delivery_type lama agar bisa terima nilai fleksibel
+    // Constraint lama hanya allow: 'Delivery', 'Pickup'
+    await query('ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_delivery_type_check');
+    await query(`ALTER TABLE orders ADD CONSTRAINT orders_delivery_type_check 
+                 CHECK (delivery_type IN ('Delivery', 'Pickup', 'Offline'))`);
+
+    // FIX: Hapus constraint payment_status lama agar bisa terima 'Lunas' dan 'Sudah Dibayar'
+    // Constraint lama hanya allow: 'Belum Dibayar', 'Sudah Dibayar'
+    await query('ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_payment_status_check');
+    await query(`ALTER TABLE orders ADD CONSTRAINT orders_payment_status_check 
+                 CHECK (payment_status IN ('Belum Dibayar', 'Sudah Dibayar'))`);
+
+    console.log('✅ Auto-Migration selesai.');
   } catch (err) {
     console.log('⚠️ Auto-Migration Info:', err.message);
   }
 })();
 
+// ==========================================
+// HEALTH CHECK
+// ==========================================
 app.get('/api/health', async (req, res) => {
   try {
     const dbTest = await query('SELECT NOW()');
@@ -67,7 +82,7 @@ app.get('/api/health', async (req, res) => {
 });
 
 // ==========================================
-// ENDPOINT AUTENTIKASI
+// AUTENTIKASI
 // ==========================================
 app.post('/api/auth/register', async (req, res) => {
   const { name, email, password, role, phone } = req.body;
@@ -77,7 +92,7 @@ app.post('/api/auth/register', async (req, res) => {
   try {
     const userCheck = await query('SELECT id FROM users WHERE email = $1', [email]);
     if (userCheck.rows.length > 0) return res.status(400).json({ status: 'error', message: 'Email sudah terdaftar' });
-    
+
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
     const newUser = await query(
@@ -96,11 +111,11 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const userResult = await query('SELECT * FROM users WHERE email = $1', [email]);
     if (userResult.rows.length === 0) return res.status(401).json({ status: 'error', message: 'Email atau password salah' });
-    
+
     const user = userResult.rows[0];
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(401).json({ status: 'error', message: 'Email atau password salah' });
-    
+
     const token = jwt.sign({ id: user.id, role: user.role, name: user.name }, JWT_SECRET, { expiresIn: '1d' });
     res.status(200).json({
       status: 'success',
@@ -113,7 +128,7 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // ==========================================
-// CRUD: MANAGEMENT PRODUK (OBAT)
+// CRUD: PRODUK
 // ==========================================
 app.get('/api/products', async (req, res) => {
   try {
@@ -127,7 +142,7 @@ app.get('/api/products', async (req, res) => {
 app.post('/api/products', upload.single('image'), async (req, res) => {
   const { name, unit, price, badge, stock, requires_prescription, category } = req.body;
   const imagePath = req.file ? `/uploads/${req.file.filename}` : null;
-  const isPrescriptionRequired = requires_prescription === 'true'; 
+  const isPrescriptionRequired = requires_prescription === 'true';
 
   if (!name || !unit || !price) return res.status(400).json({ status: 'error', message: 'Data produk tidak lengkap' });
   try {
@@ -174,7 +189,7 @@ app.delete('/api/products/:id', async (req, res) => {
 });
 
 // ==========================================
-// CRUD: MANAGEMENT PESANAN (ORDERS)
+// CRUD: PESANAN (ORDERS)
 // ==========================================
 app.get('/api/orders', async (req, res) => {
   try {
@@ -201,13 +216,14 @@ app.post('/api/orders', upload.single('prescription'), async (req, res) => {
       `INSERT INTO orders (order_id, user_id, customer_name, delivery_address, delivery_type, status, payment_status, total_amount, prescription_image, total_price, items) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
       [
-        orderId, user_id || null, customer_name, delivery_address || '-', dbDeliveryType, 
+        orderId, user_id || null, customer_name, delivery_address || '-', dbDeliveryType,
         'Cek Resep', 'Belum Dibayar', total_price || 0, prescriptionPath, total_price || 0, items || '[]'
       ]
     );
     res.status(201).json({ status: 'success', message: 'Checkout berhasil', data: result.rows[0] });
   } catch (error) {
-    res.status(500).json({ status: 'error', message: 'Gagal melakukan checkout pesanan. Pastikan struktur DB sudah diupdate.' });
+    console.error('Order error:', error.message);
+    res.status(500).json({ status: 'error', message: 'Gagal melakukan checkout: ' + error.message });
   }
 });
 
@@ -226,7 +242,7 @@ app.put('/api/orders/:id/status', async (req, res) => {
   }
 });
 
-// ENDPOINT: KURIR AMBIL TUGAS
+// KURIR: Ambil Tugas
 app.put('/api/orders/:id/take-task', async (req, res) => {
   const { id } = req.params;
   const { driver_name, driver_vehicle } = req.body;
@@ -248,24 +264,54 @@ app.put('/api/orders/:id/take-task', async (req, res) => {
   }
 });
 
-// ENDPOINT: KURIR SELESAIKAN PESANAN
+// KURIR: Selesaikan Pesanan
 app.put('/api/orders/:id/complete-task', async (req, res) => {
   const { id } = req.params;
   try {
     let result = await query(
-      `UPDATE orders SET status = 'Pesanan Tiba' WHERE order_id = $1 RETURNING *`,
-      [id]
+      `UPDATE orders SET status = 'Pesanan Tiba' WHERE order_id = $1 RETURNING *`, [id]
     );
     if (result.rows.length === 0) {
       result = await query(
-        `UPDATE orders SET status = 'Pesanan Tiba' WHERE id = $1 RETURNING *`,
-        [id]
+        `UPDATE orders SET status = 'Pesanan Tiba' WHERE id = $1 RETURNING *`, [id]
       );
       if (result.rows.length === 0) return res.status(404).json({ status: 'error', message: 'Pesanan tidak ditemukan' });
     }
     res.status(200).json({ status: 'success', data: result.rows[0] });
   } catch (error) {
     res.status(500).json({ status: 'error', message: 'Gagal menyelesaikan pesanan' });
+  }
+});
+
+// KONFIRMASI PEMBAYARAN COD
+// Dipakai oleh: Kasir (COD Pickup) & Kurir (COD Delivery)
+app.put('/api/orders/:id/pay', async (req, res) => {
+  const { id } = req.params;
+  const { paid_by } = req.body;
+  try {
+    let result = await query(
+      `UPDATE orders SET payment_status = 'Sudah Dibayar'
+       WHERE order_id = $1 AND payment_status = 'Belum Dibayar' RETURNING *`,
+      [id]
+    );
+    if (result.rows.length === 0) {
+      result = await query(
+        `UPDATE orders SET payment_status = 'Sudah Dibayar'
+         WHERE id = $1 AND payment_status = 'Belum Dibayar' RETURNING *`,
+        [id]
+      );
+    }
+    if (result.rows.length === 0) {
+      return res.status(404).json({ status: 'error', message: 'Pesanan tidak ditemukan atau sudah lunas' });
+    }
+    res.status(200).json({
+      status: 'success',
+      message: `Pembayaran COD dikonfirmasi oleh ${paid_by || 'sistem'}`,
+      data: result.rows[0]
+    });
+  } catch (error) {
+    console.error('COD pay error:', error.message);
+    res.status(500).json({ status: 'error', message: 'Gagal mengkonfirmasi pembayaran: ' + error.message });
   }
 });
 
@@ -284,44 +330,75 @@ app.delete('/api/orders/:id', async (req, res) => {
 });
 
 // ==========================================
-// ENDPOINT KHUSUS: KASIR (POS SYSTEM)
+// KASIR: POS SYSTEM
 // ==========================================
+
+// POST: Transaksi POS Offline
+// FIX: delivery_type pakai 'Offline' (constraint sudah diperluas di migration)
+//      payment_status pakai 'Sudah Dibayar' (bukan 'Lunas')
 app.post('/api/cashier/orders', async (req, res) => {
   const { cashier_id, customer_name, payment_method, total_price, items } = req.body;
   try {
     const orderId = `#POS-${Math.floor(1000 + Math.random() * 9000)}`;
     const parsedItems = typeof items === 'string' ? JSON.parse(items) : items;
 
-    // 1. Simpan transaksi langsung selesai ke database orders
     const result = await query(
       `INSERT INTO orders (order_id, user_id, customer_name, delivery_address, delivery_type, status, payment_status, total_amount, total_price, items) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
       [
-        orderId, cashier_id || null, customer_name || 'Pelanggan Offline', payment_method, 
-        'Offline', 'Pesanan Tiba', 'Lunas', total_price, total_price, JSON.stringify(parsedItems)
+        orderId,
+        cashier_id || null,
+        customer_name || 'Pelanggan Offline',
+        payment_method,   // simpan metode bayar di delivery_address sebagai info
+        'Offline',        // delivery_type = 'Offline' (constraint sudah diperluas)
+        'Pesanan Tiba',
+        'Sudah Dibayar',  // FIX: bukan 'Lunas'
+        total_price,
+        total_price,
+        JSON.stringify(parsedItems)
       ]
     );
 
-    // 2. Potong stok produk secara berkala sesuai keranjang POS
+    // Potong stok produk
     for (const item of parsedItems) {
       await query('UPDATE products SET stock = stock - $1 WHERE id = $2', [item.quantity, item.id]);
     }
 
     res.status(201).json({ status: 'success', message: 'Transaksi offline berhasil diproses', data: result.rows[0] });
   } catch (error) {
+    console.error('Cashier POS error:', error.message);
     res.status(500).json({ status: 'error', message: 'Gagal memproses transaksi kasir: ' + error.message });
   }
 });
 
+// GET: Riwayat transaksi shift hari ini
+// FIX: filter pakai order_id LIKE '#POS-%' karena lebih reliable
 app.get('/api/cashier/shift-orders', async (req, res) => {
   try {
-    // Menarik riwayat transaksi kasir khusus hari ini (shift berjalan)
     const result = await query(
-      `SELECT * FROM orders WHERE delivery_type = 'Offline' AND created_at >= CURRENT_DATE ORDER BY created_at DESC`
+      `SELECT * FROM orders 
+       WHERE order_id LIKE '#POS-%' AND created_at >= CURRENT_DATE 
+       ORDER BY created_at DESC`
     );
     res.status(200).json({ status: 'success', data: result.rows });
   } catch (error) {
     res.status(500).json({ status: 'error', message: 'Gagal memuat riwayat transaksi shift' });
+  }
+});
+
+// GET: Daftar tagihan COD yang belum dibayar (untuk tab kasir)
+app.get('/api/cashier/cod-pending', async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT * FROM orders 
+       WHERE payment_status = 'Belum Dibayar'
+         AND delivery_type IN ('Delivery', 'Pickup')
+         AND order_id NOT LIKE '#POS-%'
+       ORDER BY created_at DESC`
+    );
+    res.status(200).json({ status: 'success', data: result.rows });
+  } catch (error) {
+    res.status(500).json({ status: 'error', message: 'Gagal memuat tagihan COD pending' });
   }
 });
 

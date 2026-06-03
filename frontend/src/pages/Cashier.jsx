@@ -1,67 +1,202 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+// ──────────────────────────────────────────────
+// MODAL: Konfirmasi Pembayaran COD Pickup
+// ──────────────────────────────────────────────
+function CodPaymentModal({ order, onClose, onConfirm }) {
+  const [amountPaid, setAmountPaid] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  const total = Number(order.total_amount);
+  const paid = Number(amountPaid) || 0;
+  const change = paid - total;
+  const isValid = paid >= total;
+
+  // Shortcut nominal uang
+  const QUICK_AMOUNTS = [
+    total,
+    Math.ceil(total / 10000) * 10000,
+    Math.ceil(total / 50000) * 50000,
+    Math.ceil(total / 100000) * 100000,
+  ].filter((v, i, arr) => arr.indexOf(v) === i && v >= total).slice(0, 4);
+
+  const handleConfirm = async () => {
+    if (!isValid) return;
+    setIsProcessing(true);
+    await onConfirm(order.order_id || order.id, paid);
+    setIsProcessing(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden">
+        {/* Header */}
+        <div className="bg-apx-dark p-6 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-apx-brand/10 rounded-full blur-2xl"></div>
+          <div className="relative z-10">
+            <span className="text-[10px] bg-apx-brand/20 text-apx-brand px-3 py-1 rounded-full font-extrabold uppercase tracking-widest">
+              COD Pickup
+            </span>
+            <h2 className="text-white font-extrabold text-xl mt-3">Terima Pembayaran</h2>
+            <p className="text-gray-400 text-sm font-medium mt-1">{order.order_id} • {order.customer_name}</p>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-5">
+          {/* Total Tagihan */}
+          <div className="bg-gray-50 rounded-2xl p-4 flex justify-between items-center border border-gray-100">
+            <span className="text-sm font-bold text-gray-500">Total Tagihan</span>
+            <span className="font-extrabold text-2xl text-apx-dark">
+              Rp{total.toLocaleString('id-ID')}
+            </span>
+          </div>
+
+          {/* Input nominal uang */}
+          <div>
+            <label className="block text-xs font-extrabold text-gray-500 uppercase tracking-wider mb-2">
+              Uang yang Diterima (Rp)
+            </label>
+            <input
+              type="number"
+              value={amountPaid}
+              onChange={(e) => setAmountPaid(e.target.value)}
+              placeholder="Masukkan nominal..."
+              className="w-full bg-gray-50 border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:bg-white focus:border-apx-brand font-extrabold text-xl text-apx-dark transition-all"
+            />
+          </div>
+
+          {/* Shortcut Nominal */}
+          <div>
+            <p className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-2">Nominal Cepat</p>
+            <div className="grid grid-cols-2 gap-2">
+              {QUICK_AMOUNTS.map((amount) => (
+                <button
+                  key={amount}
+                  type="button"
+                  onClick={() => setAmountPaid(String(amount))}
+                  className={`py-2.5 rounded-xl text-xs font-extrabold border transition-all ${
+                    Number(amountPaid) === amount
+                      ? 'bg-apx-dark text-apx-brand border-apx-dark'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-apx-dark'
+                  }`}
+                >
+                  Rp{amount.toLocaleString('id-ID')}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Kembalian */}
+          <div className={`rounded-2xl p-4 transition-all ${
+            paid === 0 ? 'bg-gray-50 border border-gray-100' :
+            isValid ? 'bg-apx-brand/10 border-2 border-apx-brand/30' :
+            'bg-rose-50 border-2 border-rose-200'
+          }`}>
+            <div className="flex justify-between items-center">
+              <span className={`text-sm font-bold ${isValid && paid > 0 ? 'text-teal-700' : 'text-gray-400'}`}>
+                {paid === 0 ? 'Kembalian' : isValid ? '✓ Kembalian' : '✗ Kurang'}
+              </span>
+              <span className={`font-extrabold text-2xl ${
+                paid === 0 ? 'text-gray-300' :
+                isValid ? 'text-apx-dark' : 'text-rose-600'
+              }`}>
+                {paid === 0 ? 'Rp0' : isValid
+                  ? `Rp${change.toLocaleString('id-ID')}`
+                  : `Rp${Math.abs(change).toLocaleString('id-ID')} kurang`
+                }
+              </span>
+            </div>
+          </div>
+
+          {/* Tombol Aksi */}
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 bg-gray-50 hover:bg-gray-100 text-gray-600 font-extrabold py-3.5 rounded-xl transition-all border border-gray-200"
+            >
+              Batal
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirm}
+              disabled={!isValid || isProcessing}
+              className="flex-1 bg-apx-brand hover:bg-apx-brandDark text-apx-dark font-extrabold py-3.5 rounded-xl transition-all shadow-md disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {isProcessing
+                ? <><i className="fa-solid fa-circle-notch fa-spin"></i> Memproses...</>
+                : <><i className="fa-solid fa-check-circle"></i> Konfirmasi Lunas</>
+              }
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────
+// KOMPONEN UTAMA KASIR
+// ──────────────────────────────────────────────
 function Cashier() {
   const [activeTab, setActiveTab] = useState('pos');
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState([]);
   const [shiftOrders, setShiftOrders] = useState([]);
+  const [codPending, setCodPending] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Semua');
   const [customerName, setCustomerName] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [loading, setLoading] = useState(true);
   const [receiptData, setReceiptData] = useState(null);
+  const [codModal, setCodModal] = useState(null); // order yang sedang dibayar
+  const [cashPaid, setCashPaid] = useState(''); // untuk POS cash biasa
 
   const navigate = useNavigate();
-  
-  // Parse user dari local storage
   const userStr = localStorage.getItem('siresep_user');
   const user = userStr ? JSON.parse(userStr) : null;
-  
   const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
   const serverBaseUrl = baseUrl.replace('/api', '');
-
   const categories = ['Semua', 'Obat Bebas', 'Obat Keras', 'Suplemen & Vitamin', 'Alat Kesehatan', 'Perawatan Tubuh'];
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const prodRes = await fetch(`${baseUrl}/products`);
-      const prodData = await prodRes.json();
-      if (prodData.status === 'success') setProducts(prodData.data);
+      const [prodRes, shiftRes, codRes] = await Promise.all([
+        fetch(`${baseUrl}/products`),
+        fetch(`${baseUrl}/cashier/shift-orders`),
+        fetch(`${baseUrl}/cashier/cod-pending`),
+      ]);
+      const [prodData, shiftData, codData] = await Promise.all([
+        prodRes.json(), shiftRes.json(), codRes.json()
+      ]);
 
-      const shiftRes = await fetch(`${baseUrl}/cashier/shift-orders`);
-      const shiftData = await shiftRes.json();
+      if (prodData.status === 'success') setProducts(prodData.data);
       if (shiftData.status === 'success') setShiftOrders(shiftData.data);
+      if (codData.status === 'success') setCodPending(codData.data);
     } catch (error) {
       console.error('Gagal mengambil data kasir:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [baseUrl]);
 
   useEffect(() => {
-    // PERBAIKAN: Gunakan user?.id dan user?.role sebagai dependency, bukan objek user secara keseluruhan
     if (!user || (user.role !== 'kasir' && user.role !== 'admin')) {
       navigate('/login');
       return;
     }
     fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, user?.role, navigate]);
+  }, [user?.id, user?.role, navigate, fetchData]);
 
+  // ── POS Cart Handlers ──
   const handleAddToCart = (product) => {
-    if (product.stock <= 0) {
-      alert('Stok produk habis!');
-      return;
-    }
+    if (product.stock <= 0) { alert('Stok produk habis!'); return; }
     const existing = cart.find(item => item.id === product.id);
     if (existing) {
-      if (existing.quantity >= product.stock) {
-        alert('Tidak bisa melebihi stok yang tersedia!');
-        return;
-      }
+      if (existing.quantity >= product.stock) { alert('Tidak bisa melebihi stok yang tersedia!'); return; }
       setCart(cart.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item));
     } else {
       setCart([...cart, { ...product, quantity: 1 }]);
@@ -75,26 +210,27 @@ function Cashier() {
     if (newQty <= 0) {
       setCart(cart.filter(item => item.id !== productId));
     } else {
-      if (newQty > existing.stock) {
-        alert('Stok tidak mencukupi!');
-        return;
-      }
+      if (newQty > existing.stock) { alert('Stok tidak mencukupi!'); return; }
       setCart(cart.map(item => item.id === productId ? { ...item, quantity: newQty } : item));
     }
   };
 
-  const calculateTotal = () => {
-    return cart.reduce((sum, item) => sum + (Number(item.price) * item.quantity), 0);
-  };
+  const calculateTotal = () => cart.reduce((sum, item) => sum + (Number(item.price) * item.quantity), 0);
 
+  // ── POS Checkout ──
   const handleCheckout = async (e) => {
     e.preventDefault();
-    if (cart.length === 0) {
-      alert('Keranjang belanja kosong!');
+    if (cart.length === 0) { alert('Keranjang belanja kosong!'); return; }
+
+    const totalPrice = calculateTotal();
+    const paidAmount = Number(cashPaid);
+
+    // Validasi cash
+    if (paymentMethod === 'Cash' && paidAmount < totalPrice) {
+      alert(`Uang yang diterima kurang! Total: Rp${totalPrice.toLocaleString('id-ID')}`);
       return;
     }
 
-    const totalPrice = calculateTotal();
     const orderPayload = {
       cashier_id: user.id,
       customer_name: customerName || 'Pelanggan Offline',
@@ -112,19 +248,21 @@ function Cashier() {
       const result = await response.json();
 
       if (result.status === 'success') {
+        const change = paymentMethod === 'Cash' ? paidAmount - totalPrice : 0;
         setReceiptData({
           order_id: result.data.order_id,
           customer_name: orderPayload.customer_name,
           payment_method: orderPayload.payment_method,
           total_price: totalPrice,
+          amount_paid: paidAmount,
+          change: change,
           items: cart,
           cashier_name: user.name,
           date: new Date().toLocaleString('id-ID')
         });
-
-        alert('Transaksi berhasil disimpan! Membuka jendela cetak struk...');
         setCart([]);
         setCustomerName('');
+        setCashPaid('');
         fetchData();
       } else {
         alert('Gagal memproses transaksi.');
@@ -134,12 +272,30 @@ function Cashier() {
     }
   };
 
+  // ── COD Pickup: Konfirmasi Pembayaran ──
+  const handleCodConfirm = async (orderId, amountPaid) => {
+    try {
+      const res = await fetch(`${baseUrl}/orders/${encodeURIComponent(orderId)}/pay`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paid_by: 'kasir', amount_paid: amountPaid })
+      });
+      const result = await res.json();
+      if (result.status === 'success') {
+        setCodModal(null);
+        alert(`✅ Pembayaran COD untuk ${orderId} berhasil dikonfirmasi!`);
+        fetchData();
+      } else {
+        alert('Gagal mengkonfirmasi: ' + result.message);
+      }
+    } catch {
+      alert('Kesalahan koneksi saat konfirmasi pembayaran.');
+    }
+  };
+
   useEffect(() => {
     if (receiptData) {
-      setTimeout(() => {
-        window.print();
-        setReceiptData(null);
-      }, 500);
+      setTimeout(() => { window.print(); setReceiptData(null); }, 500);
     }
   }, [receiptData]);
 
@@ -155,9 +311,15 @@ function Cashier() {
     return matchesSearch && matchesCategory;
   });
 
+  const posTotal = calculateTotal();
+  const posChange = paymentMethod === 'Cash' && Number(cashPaid) >= posTotal
+    ? Number(cashPaid) - posTotal : 0;
+  const posIsValid = paymentMethod !== 'Cash' || Number(cashPaid) >= posTotal;
+
   return (
     <div className="text-slate-800 antialiased bg-[#F4F7F6] min-h-screen flex flex-col print:bg-white print:text-black">
-      {/* HEADER BAR - HIDDEN ON PRINT */}
+
+      {/* ── HEADER ── */}
       <nav className="bg-white border-b border-gray-200 py-4 px-6 sticky top-0 z-50 shadow-sm flex items-center justify-between print:hidden">
         <div className="flex items-center gap-3">
           <div className="bg-apx-dark text-apx-brand w-10 h-10 rounded-xl flex items-center justify-center text-lg shadow-md">
@@ -169,20 +331,37 @@ function Cashier() {
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <button onClick={() => setActiveTab('pos')} className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'pos' ? 'bg-apx-dark text-white' : 'text-gray-500 hover:bg-gray-100'}`}>
-            <i className="fa-solid fa-grip mr-2"></i> Mesin POS
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          {/* Tab POS */}
+          <button onClick={() => setActiveTab('pos')}
+            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'pos' ? 'bg-apx-dark text-white' : 'text-gray-500 hover:bg-gray-100'}`}>
+            <i className="fa-solid fa-grip mr-2"></i>Mesin POS
           </button>
-          <button onClick={() => setActiveTab('shift')} className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'shift' ? 'bg-apx-dark text-white' : 'text-gray-500 hover:bg-gray-100'}`}>
-            <i className="fa-solid fa-clock-rotate-left mr-2"></i> Riwayat Shift
+
+          {/* Tab COD dengan badge */}
+          <button onClick={() => setActiveTab('cod')}
+            className={`relative px-4 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'cod' ? 'bg-orange-500 text-white' : 'text-gray-500 hover:bg-gray-100'}`}>
+            <i className="fa-solid fa-hand-holding-dollar mr-2"></i>Tagihan COD
+            {codPending.length > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[10px] font-bold h-5 w-5 rounded-full flex items-center justify-center ring-2 ring-white">
+                {codPending.length}
+              </span>
+            )}
           </button>
+
+          {/* Tab Riwayat */}
+          <button onClick={() => setActiveTab('shift')}
+            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'shift' ? 'bg-apx-dark text-white' : 'text-gray-500 hover:bg-gray-100'}`}>
+            <i className="fa-solid fa-clock-rotate-left mr-2"></i>Riwayat Shift
+          </button>
+
           <button onClick={handleLogout} className="bg-rose-50 text-rose-600 hover:bg-rose-100 px-4 py-2 rounded-xl text-sm font-bold transition-all">
-            <i className="fa-solid fa-arrow-right-from-bracket"></i> Keluar
+            <i className="fa-solid fa-arrow-right-from-bracket"></i>
           </button>
         </div>
       </nav>
 
-      {/* CORE WORKSPACE */}
+      {/* ── WORKSPACE ── */}
       <div className="flex-1 p-6 max-w-[1600px] w-full mx-auto print:p-0">
         {loading ? (
           <div className="flex flex-col items-center justify-center h-[60vh]">
@@ -190,17 +369,25 @@ function Cashier() {
             <p className="text-sm font-bold text-gray-500">Memuat modul kasir...</p>
           </div>
         ) : activeTab === 'pos' ? (
+
+          /* ════════════════════════════════
+             TAB 1: MESIN POS
+          ════════════════════════════════ */
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 print:hidden">
-            {/* LEFT COLUMN: PRODUCT SELECTION (7 COLS) */}
+
+            {/* Kolom Kiri: Produk */}
             <div className="lg:col-span-7 flex flex-col gap-4">
               <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-4">
                 <div className="relative">
                   <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
-                  <input type="text" placeholder="Cari nama produk obat..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-12 pr-4 py-3 focus:outline-none focus:bg-white focus:border-apx-brand font-medium" />
+                  <input type="text" placeholder="Cari nama produk obat..."
+                    value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-12 pr-4 py-3 focus:outline-none focus:bg-white focus:border-apx-brand font-medium" />
                 </div>
                 <div className="flex gap-2 overflow-x-auto pb-1 hide-scrollbar">
                   {categories.map(cat => (
-                    <button key={cat} onClick={() => setSelectedCategory(cat)} className={`px-4 py-2 rounded-xl text-xs font-bold shrink-0 transition-all ${selectedCategory === cat ? 'bg-apx-brand text-apx-dark shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                    <button key={cat} onClick={() => setSelectedCategory(cat)}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold shrink-0 transition-all ${selectedCategory === cat ? 'bg-apx-brand text-apx-dark shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
                       {cat}
                     </button>
                   ))}
@@ -209,13 +396,13 @@ function Cashier() {
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 max-h-[calc(100vh-260px)] overflow-y-auto pr-1">
                 {filteredProducts.map(product => (
-                  <div key={product.id} onClick={() => handleAddToCart(product)} className="bg-white rounded-2xl p-4 border border-gray-100 hover:border-apx-brand transition-all shadow-sm cursor-pointer flex flex-col justify-between group">
+                  <div key={product.id} onClick={() => handleAddToCart(product)}
+                    className="bg-white rounded-2xl p-4 border border-gray-100 hover:border-apx-brand transition-all shadow-sm cursor-pointer flex flex-col justify-between group">
                     <div className="space-y-2">
-                      {product.image ? (
-                        <img src={`${serverBaseUrl}${product.image}`} alt={product.name} className="w-full h-28 object-cover rounded-xl border border-gray-100" />
-                      ) : (
-                        <div className="w-full h-28 bg-gray-50 text-gray-300 rounded-xl flex items-center justify-center text-3xl border border-dashed"><i className="fa-solid fa-pills"></i></div>
-                      )}
+                      {product.image
+                        ? <img src={`${serverBaseUrl}${product.image}`} alt={product.name} className="w-full h-28 object-cover rounded-xl border border-gray-100" />
+                        : <div className="w-full h-28 bg-gray-50 text-gray-300 rounded-xl flex items-center justify-center text-3xl border border-dashed"><i className="fa-solid fa-pills"></i></div>
+                      }
                       <div>
                         <h3 className="font-extrabold text-sm text-apx-dark group-hover:text-apx-brand transition-colors line-clamp-1">{product.name}</h3>
                         <p className="text-[11px] text-gray-400 font-bold">{product.unit}</p>
@@ -230,11 +417,14 @@ function Cashier() {
               </div>
             </div>
 
-            {/* RIGHT COLUMN: POS CHECKOUT CART (5 COLS) */}
+            {/* Kolom Kanan: Checkout */}
             <div className="lg:col-span-5">
               <form onSubmit={handleCheckout} className="bg-white rounded-3xl border border-gray-100 shadow-md p-6 flex flex-col max-h-[calc(100vh-140px)] sticky top-24">
-                <h2 className="font-extrabold text-lg text-apx-dark mb-4 pb-2 border-b border-gray-100"><i className="fa-solid fa-basket-shopping text-apx-brand mr-2"></i>Item Penjualan</h2>
+                <h2 className="font-extrabold text-lg text-apx-dark mb-4 pb-2 border-b border-gray-100">
+                  <i className="fa-solid fa-basket-shopping text-apx-brand mr-2"></i>Item Penjualan
+                </h2>
 
+                {/* Cart Items */}
                 <div className="flex-1 overflow-y-auto space-y-3 mb-4 pr-1 min-h-[180px]">
                   {cart.length === 0 ? (
                     <div className="text-center py-10 text-gray-400 font-medium text-sm space-y-2">
@@ -249,9 +439,15 @@ function Cashier() {
                           <p className="text-[10px] text-gray-400 font-bold mt-0.5">Rp{Number(item.price).toLocaleString('id-ID')} / {item.unit}</p>
                         </div>
                         <div className="flex items-center gap-2.5 shrink-0">
-                          <button type="button" onClick={() => handleUpdateQuantity(item.id, -1)} className="w-7 h-7 bg-white hover:bg-gray-100 border border-gray-200 text-gray-600 rounded-lg text-xs font-bold flex items-center justify-center transition-colors"><i className="fa-solid fa-minus"></i></button>
+                          <button type="button" onClick={() => handleUpdateQuantity(item.id, -1)}
+                            className="w-7 h-7 bg-white hover:bg-gray-100 border border-gray-200 text-gray-600 rounded-lg text-xs font-bold flex items-center justify-center">
+                            <i className="fa-solid fa-minus"></i>
+                          </button>
                           <span className="font-extrabold text-xs text-apx-dark w-6 text-center">{item.quantity}</span>
-                          <button type="button" onClick={() => handleUpdateQuantity(item.id, 1)} className="w-7 h-7 bg-white hover:bg-gray-100 border border-gray-200 text-gray-600 rounded-lg text-xs font-bold flex items-center justify-center transition-colors"><i className="fa-solid fa-plus"></i></button>
+                          <button type="button" onClick={() => handleUpdateQuantity(item.id, 1)}
+                            className="w-7 h-7 bg-white hover:bg-gray-100 border border-gray-200 text-gray-600 rounded-lg text-xs font-bold flex items-center justify-center">
+                            <i className="fa-solid fa-plus"></i>
+                          </button>
                         </div>
                       </div>
                     ))
@@ -259,43 +455,199 @@ function Cashier() {
                 </div>
 
                 <div className="space-y-3 border-t border-gray-100 pt-4">
+                  {/* Nama Pembeli */}
                   <div>
                     <label className="block text-xs font-extrabold text-gray-500 uppercase tracking-wider mb-1">Nama Pembeli (Opsional)</label>
-                    <input type="text" placeholder="Pelanggan Umum" value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:bg-white focus:border-apx-brand font-medium text-sm" />
+                    <input type="text" placeholder="Pelanggan Umum" value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:bg-white focus:border-apx-brand font-medium text-sm" />
                   </div>
+
+                  {/* Metode Bayar */}
                   <div>
                     <label className="block text-xs font-extrabold text-gray-500 uppercase tracking-wider mb-1">Metode Pembayaran</label>
                     <div className="grid grid-cols-2 gap-3">
-                      <button type="button" onClick={() => setPaymentMethod('Cash')} className={`py-2.5 rounded-xl text-xs font-extrabold border transition-all flex items-center justify-center gap-2 ${paymentMethod === 'Cash' ? 'bg-apx-dark text-white border-apx-dark shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                      <button type="button" onClick={() => setPaymentMethod('Cash')}
+                        className={`py-2.5 rounded-xl text-xs font-extrabold border transition-all flex items-center justify-center gap-2 ${paymentMethod === 'Cash' ? 'bg-apx-dark text-white border-apx-dark shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
                         <i className="fa-solid fa-money-bill-wave"></i> Tunai / Cash
                       </button>
-                      <button type="button" onClick={() => setPaymentMethod('Cashless')} className={`py-2.5 rounded-xl text-xs font-extrabold border transition-all flex items-center justify-center gap-2 ${paymentMethod === 'Cashless' ? 'bg-apx-dark text-white border-apx-dark shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                      <button type="button" onClick={() => setPaymentMethod('Cashless')}
+                        className={`py-2.5 rounded-xl text-xs font-extrabold border transition-all flex items-center justify-center gap-2 ${paymentMethod === 'Cashless' ? 'bg-apx-dark text-white border-apx-dark shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
                         <i className="fa-solid fa-credit-card"></i> Cashless / QRIS
                       </button>
                     </div>
                   </div>
 
+                  {/* Input Uang Diterima — hanya jika Cash */}
+                  {paymentMethod === 'Cash' && (
+                    <div className="space-y-2">
+                      <div>
+                        <label className="block text-xs font-extrabold text-gray-500 uppercase tracking-wider mb-1">Uang Diterima (Rp)</label>
+                        <input type="number" placeholder="0"
+                          value={cashPaid} onChange={(e) => setCashPaid(e.target.value)}
+                          className="w-full bg-gray-50 border-2 border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:bg-white focus:border-apx-brand font-extrabold text-base transition-all" />
+                      </div>
+                      {/* Shortcut nominal */}
+                      {posTotal > 0 && (
+                        <div className="flex gap-2 flex-wrap">
+                          {[posTotal, Math.ceil(posTotal / 10000) * 10000, Math.ceil(posTotal / 50000) * 50000].filter((v, i, a) => a.indexOf(v) === i).map(amt => (
+                            <button key={amt} type="button" onClick={() => setCashPaid(String(amt))}
+                              className={`text-[10px] font-extrabold px-2.5 py-1.5 rounded-lg border transition-all ${Number(cashPaid) === amt ? 'bg-apx-dark text-apx-brand border-apx-dark' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
+                              Rp{amt.toLocaleString('id-ID')}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {/* Kembalian */}
+                      {Number(cashPaid) > 0 && (
+                        <div className={`rounded-xl p-3 flex justify-between items-center text-sm font-extrabold border ${posIsValid ? 'bg-apx-brand/10 border-apx-brand/30 text-apx-dark' : 'bg-rose-50 border-rose-200 text-rose-600'}`}>
+                          <span>{posIsValid ? '✓ Kembalian' : '✗ Kurang'}</span>
+                          <span>{posIsValid ? `Rp${posChange.toLocaleString('id-ID')}` : `Rp${(posTotal - Number(cashPaid)).toLocaleString('id-ID')}`}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Total */}
                   <div className="bg-gray-50 rounded-2xl p-4 flex items-center justify-between border border-gray-100 my-2">
                     <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Total Pembayaran</span>
-                    <span className="font-extrabold text-xl text-apx-brand">Rp{calculateTotal().toLocaleString('id-ID')}</span>
+                    <span className="font-extrabold text-xl text-apx-brand">Rp{posTotal.toLocaleString('id-ID')}</span>
                   </div>
 
-                  <button type="submit" disabled={cart.length === 0} className="w-full bg-apx-brand hover:bg-opacity-90 text-apx-dark font-extrabold py-3.5 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                  {/* Tombol Bayar */}
+                  <button type="submit" disabled={cart.length === 0 || !posIsValid}
+                    className="w-full bg-apx-brand hover:bg-opacity-90 text-apx-dark font-extrabold py-3.5 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                     <i className="fa-solid fa-print"></i> Selesaikan & Cetak Struk
                   </button>
                 </div>
               </form>
             </div>
           </div>
+
+        ) : activeTab === 'cod' ? (
+
+          /* ════════════════════════════════
+             TAB 2: TAGIHAN COD PICKUP
+          ════════════════════════════════ */
+          <div className="print:hidden space-y-4">
+            {/* Header info */}
+            <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5 flex items-start gap-4">
+              <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center text-orange-600 text-xl shrink-0">
+                <i className="fa-solid fa-hand-holding-dollar"></i>
+              </div>
+              <div>
+                <h2 className="font-extrabold text-orange-800 text-base">Tagihan COD Menunggu Pembayaran</h2>
+                <p className="text-sm text-orange-600 font-medium mt-0.5">
+                  Daftar pesanan online yang memilih COD dan belum melunasi pembayaran. Klik <strong>"Terima Pembayaran"</strong> saat customer Pickup membayar di kasir.
+                  <br />
+                  <span className="text-xs italic mt-1 block text-orange-500">Untuk COD Delivery, kurir yang menandai lunas langsung dari aplikasinya.</span>
+                </p>
+              </div>
+            </div>
+
+            {codPending.length === 0 ? (
+              <div className="bg-white rounded-3xl p-12 text-center shadow-sm border border-gray-100">
+                <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <i className="fa-solid fa-circle-check text-3xl text-green-400"></i>
+                </div>
+                <h3 className="font-extrabold text-lg mb-1 text-apx-dark">Semua Tagihan Lunas!</h3>
+                <p className="text-sm text-gray-400 font-medium">Tidak ada pesanan COD yang menunggu pembayaran saat ini.</p>
+                <button onClick={fetchData} className="mt-4 bg-gray-50 hover:bg-gray-100 px-5 py-2 rounded-xl text-sm font-bold border border-gray-200 text-gray-600">
+                  <i className="fa-solid fa-rotate-right mr-1"></i> Refresh
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {codPending.map(order => {
+                  let parsedItems = [];
+                  try { parsedItems = JSON.parse(order.items || '[]'); } catch { parsedItems = []; }
+                  const isPickupOrder = order.delivery_type === 'Pickup' || (order.delivery_address || '').toLowerCase().includes('ambil');
+
+                  return (
+                    <div key={order.order_id || order.id}
+                      className={`bg-white rounded-3xl p-5 border-2 shadow-sm flex flex-col gap-4 transition-all hover:shadow-md ${isPickupOrder ? 'border-orange-100 hover:border-orange-300' : 'border-blue-100 hover:border-blue-300'}`}>
+
+                      {/* Header Card */}
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-full uppercase tracking-widest ${isPickupOrder ? 'bg-orange-50 text-orange-600 border border-orange-200' : 'bg-blue-50 text-blue-600 border border-blue-200'}`}>
+                            <i className={`fa-solid ${isPickupOrder ? 'fa-store' : 'fa-motorcycle'} mr-1`}></i>
+                            {isPickupOrder ? 'Pickup' : 'COD Delivery'}
+                          </span>
+                          <h3 className="font-extrabold text-apx-dark text-base mt-2">{order.customer_name}</h3>
+                          <p className="text-xs text-gray-400 font-bold">{order.order_id}</p>
+                        </div>
+                        <span className="font-extrabold text-lg text-apx-dark">
+                          Rp{Number(order.total_amount).toLocaleString('id-ID')}
+                        </span>
+                      </div>
+
+                      {/* Items Preview */}
+                      {parsedItems.length > 0 && (
+                        <div className="bg-gray-50 rounded-xl p-3 space-y-1.5">
+                          {parsedItems.slice(0, 3).map((item, idx) => (
+                            <div key={idx} className="flex justify-between text-xs font-medium text-gray-600">
+                              <span className="truncate max-w-[180px]">{item.qty || item.quantity}x {item.name}</span>
+                              <span className="shrink-0 font-bold">Rp{Number(item.price).toLocaleString('id-ID')}</span>
+                            </div>
+                          ))}
+                          {parsedItems.length > 3 && (
+                            <p className="text-[10px] text-apx-brand font-bold">+{parsedItems.length - 3} produk lainnya</p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Status & Aksi */}
+                      <div className="mt-auto">
+                        <div className="flex justify-between items-center mb-3">
+                          <span className="text-xs font-bold text-gray-400">Status Pesanan:</span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
+                            order.status === 'Pesanan Tiba' ? 'bg-green-100 text-green-700' :
+                            order.status === 'Kurir Menuju Lokasi' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'
+                          }`}>
+                            {order.status}
+                          </span>
+                        </div>
+
+                        {isPickupOrder ? (
+                          // Kasir yang handle Pickup
+                          <button
+                            onClick={() => setCodModal(order)}
+                            className="w-full bg-orange-500 hover:bg-orange-600 text-white font-extrabold py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2">
+                            <i className="fa-solid fa-hand-holding-dollar"></i> Terima Pembayaran
+                          </button>
+                        ) : (
+                          // COD Delivery → Kurir yang handle
+                          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
+                            <p className="text-xs font-bold text-blue-600">
+                              <i className="fa-solid fa-motorcycle mr-1"></i>
+                              Menunggu kurir konfirmasi pembayaran
+                            </p>
+                            <p className="text-[10px] text-blue-400 font-medium mt-1">Kurir akan menandai lunas saat menerima uang di rumah customer</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
         ) : (
-          /* TAB RIWAYAT TRANSAKSI SHIFT BERJALAN - HIDDEN ON PRINT */
+
+          /* ════════════════════════════════
+             TAB 3: RIWAYAT SHIFT
+          ════════════════════════════════ */
           <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm print:hidden">
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="font-extrabold text-lg text-apx-dark">Riwayat Transaksi Shift Berjalan</h2>
-                <p className="text-xs text-gray-400 font-medium">Menampilkan rekapan transaksi penjualan offline khusus hari ini.</p>
+                <p className="text-xs text-gray-400 font-medium">Rekapan transaksi penjualan offline khusus hari ini.</p>
               </div>
-              <button onClick={fetchData} className="bg-gray-50 hover:bg-gray-100 text-xs font-bold text-apx-dark px-4 py-2 rounded-xl border border-gray-200 transition-colors"><i className="fa-solid fa-rotate-right mr-1"></i> Segarkan</button>
+              <button onClick={fetchData} className="bg-gray-50 hover:bg-gray-100 text-xs font-bold text-apx-dark px-4 py-2 rounded-xl border border-gray-200 transition-colors">
+                <i className="fa-solid fa-rotate-right mr-1"></i> Segarkan
+              </button>
             </div>
 
             <div className="overflow-x-auto">
@@ -319,8 +671,12 @@ function Cashier() {
                       <tr key={order.order_id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
                         <td className="px-4 py-4 font-extrabold text-xs text-slate-900">{order.order_id}</td>
                         <td className="px-4 py-4">{order.customer_name}</td>
-                        <td className="px-4 py-4"><span className="bg-gray-100 text-gray-700 px-2.5 py-1 rounded-md text-xs font-bold">{order.payment_method || 'Cash'}</span></td>
-                        <td className="px-4 py-4"><span className="bg-green-100 text-green-700 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider">Lunas</span></td>
+                        <td className="px-4 py-4">
+                          <span className="bg-gray-100 text-gray-700 px-2.5 py-1 rounded-md text-xs font-bold">{order.payment_method || 'Cash'}</span>
+                        </td>
+                        <td className="px-4 py-4">
+                          <span className="bg-green-100 text-green-700 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider">Lunas</span>
+                        </td>
                         <td className="px-4 py-4 text-right font-extrabold text-apx-brand">Rp{Number(order.total_amount).toLocaleString('id-ID')}</td>
                       </tr>
                     ))
@@ -332,7 +688,16 @@ function Cashier() {
         )}
       </div>
 
-      {/* STRUK PRINT LAYOUT - KHUSUS UNTUK THERMAL RECEIPT PRINTER (80MM) */}
+      {/* ── MODAL COD PICKUP ── */}
+      {codModal && (
+        <CodPaymentModal
+          order={codModal}
+          onClose={() => setCodModal(null)}
+          onConfirm={handleCodConfirm}
+        />
+      )}
+
+      {/* ── STRUK PRINT (80MM THERMAL) ── */}
       {receiptData && (
         <div className="hidden print:block p-4 w-[76mm] text-xs font-mono bg-white text-black mx-auto">
           <div className="text-center space-y-1 border-b border-dashed border-black pb-3">
@@ -340,7 +705,7 @@ function Cashier() {
             <p className="text-[10px]">Jl. Raya Farmasi No. 10, Surabaya</p>
             <p className="text-[10px]">Telp: 0812-3456-7890</p>
           </div>
-          
+
           <div className="py-3 space-y-1 text-[10px] border-b border-dashed border-black">
             <p>ID Transaksi : {receiptData.order_id}</p>
             <p>Tanggal      : {receiptData.date}</p>
@@ -367,6 +732,18 @@ function Cashier() {
               <span>TOTAL</span>
               <span>Rp{receiptData.total_price.toLocaleString('id-ID')}</span>
             </div>
+            {receiptData.payment_method === 'Cash' && (
+              <>
+                <div className="flex justify-between">
+                  <span>Uang Diterima</span>
+                  <span>Rp{Number(receiptData.amount_paid).toLocaleString('id-ID')}</span>
+                </div>
+                <div className="flex justify-between font-bold">
+                  <span>Kembalian</span>
+                  <span>Rp{Number(receiptData.change).toLocaleString('id-ID')}</span>
+                </div>
+              </>
+            )}
             <div className="flex justify-between">
               <span>Metode Bayar</span>
               <span className="uppercase">{receiptData.payment_method}</span>
