@@ -6,7 +6,8 @@ import Track from './pages/Track.jsx';
 import Admin from './pages/Admin.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
-import Courier from './pages/Courier.jsx'; // Tambahkan import ini
+import Courier from './pages/Courier.jsx';
+import Cashier from './pages/Cashier.jsx'; 
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 
 function App() {
@@ -29,9 +30,13 @@ function App() {
           <ProtectedRoute allowedRoles={['customer', 'admin']}><Track /></ProtectedRoute>
         } />
 
-        {/* Tambahkan rute khusus Kurir */}
         <Route path="/courier" element={
           <ProtectedRoute allowedRoles={['kurir']}><Courier /></ProtectedRoute>
+        } />
+
+        {/* Rute khusus Kasir */}
+        <Route path="/cashier" element={
+          <ProtectedRoute allowedRoles={['kasir', 'admin']}><Cashier /></ProtectedRoute>
         } />
       </Routes>
     </Router>

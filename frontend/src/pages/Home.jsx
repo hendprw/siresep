@@ -159,6 +159,13 @@ function Home() {
               </Link>
             )}
 
+            {/* Tombol POS Kasir */}
+            {user && (user.role === 'kasir' || user.role === 'admin') && (
+              <Link to="/cashier" className="hidden md:flex bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-4 py-2 rounded-full text-sm font-bold transition-all items-center gap-2">
+                <i className="fa-solid fa-cash-register"></i> POS Kasir
+              </Link>
+            )}
+
             {/* Profil & Logout */}
             {user ? (
               <div className="hidden md:flex items-center gap-3 bg-white pl-2 pr-4 py-1.5 rounded-full border border-gray-100 shadow-sm">
@@ -274,7 +281,7 @@ function Home() {
                 <button 
                   key={category} 
                   onClick={() => setActiveCategory(category)} 
-                  className={`whitespace-nowrap px-5 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm border ${activeCategory === category ? 'bg-apx-brand text-apx-dark border-apx-brand' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-apx-dark'}`}
+                  className={`whitespace-nowrap px-5 py-2.5 rounded-full font-bold text-sm transition-all shadow-sm border ${activeCategory === category ? 'bg-apx-dark text-white border-apx-dark' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-apx-dark'}`}
                 >
                   {category}
                 </button>
@@ -293,7 +300,7 @@ function Home() {
                     <div className="w-24 h-24 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-6"><i className="fa-solid fa-box-open text-4xl text-gray-300"></i></div>
                     <h3 className="text-xl font-extrabold text-apx-dark mb-2">Produk Tidak Ditemukan</h3>
                     <p className="text-gray-500 font-medium">Tidak ada produk untuk kata kunci <strong>"{searchTerm}"</strong> di kategori <strong>{activeCategory}</strong>.</p>
-                    <button onClick={() => {setSearchTerm(''); setActiveCategory('Semua');}} className="mt-6 bg-apx-brand text-apx-dark px-6 py-2.5 rounded-full font-bold shadow-md hover:bg-apx-brandDark transition-colors">Reset Pencarian</button>
+                    <button onClick={() => {setSearchTerm(''); setActiveCategory('Semua');}} className="mt-6 bg-apx-dark text-white px-6 py-2.5 rounded-full font-bold shadow-md hover:bg-gray-800 transition-colors">Reset Pencarian</button>
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
@@ -310,7 +317,7 @@ function Home() {
                       <span className="w-2 h-8 bg-apx-brand rounded-full inline-block"></span>
                       {categoryName}
                     </h3>
-                    <button onClick={() => handleCategoryClick(categoryName)} className="text-apx-brandDark font-bold text-sm hover:text-apx-dark transition-colors flex items-center gap-1 bg-teal-50 px-4 py-2 rounded-lg">
+                    <button onClick={() => handleCategoryClick(categoryName)} className="text-apx-brand font-bold text-sm hover:text-apx-dark transition-colors flex items-center gap-1 bg-green-50 px-4 py-2 rounded-full">
                       Lihat Semua <i className="fa-solid fa-arrow-right"></i>
                     </button>
                   </div>
@@ -446,12 +453,12 @@ function renderProductCard(product, handleAddToCart, serverBaseUrl) {
       </div>
       
       <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">{product.category}</p>
-      <h3 className="font-bold text-apx-dark leading-snug mb-1 line-clamp-2 text-sm sm:text-base group-hover:text-apx-brandDark transition-colors">{product.name}</h3>
+      <h3 className="font-bold text-apx-dark leading-snug mb-1 line-clamp-2 text-sm sm:text-base group-hover:text-apx-brand transition-colors">{product.name}</h3>
       <p className="text-xs font-medium text-gray-400 mb-4">{product.unit}</p>
       
       <div className="mt-auto flex items-center justify-between">
         <span className="font-extrabold text-lg sm:text-xl tracking-tight text-apx-dark">Rp{Number(product.price).toLocaleString('id-ID')}</span>
-        <button onClick={() => handleAddToCart(product)} className="w-10 h-10 rounded-xl bg-gray-50 text-apx-dark hover:bg-apx-brand hover:text-apx-dark flex items-center justify-center transition-colors active:scale-95 border border-gray-100 hover:border-apx-brand shadow-sm">
+        <button onClick={() => handleAddToCart(product)} className="w-10 h-10 rounded-full bg-apx-dark text-apx-brand hover:bg-apx-brand hover:text-apx-dark flex items-center justify-center transition-all active:scale-95 shadow-md">
           <i className="fa-solid fa-cart-plus"></i>
         </button>
       </div>

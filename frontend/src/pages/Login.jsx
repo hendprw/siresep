@@ -1,20 +1,22 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 
 function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [errorMsg, setErrorMsg] = useState('');
+  const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    setErrorMsg('');
+    setError('');
     setIsLoading(true);
 
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/auth/login`, {
+      const response = await fetch(`${baseUrl}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
@@ -27,95 +29,109 @@ function Login() {
         localStorage.setItem('siresep_token', result.token);
         localStorage.setItem('siresep_user', JSON.stringify(result.data));
 
-        // Redirect dinamis berdasarkan role
-        const role = result.data.role;
-        if (role === 'admin' || role === 'pharmacist') {
+        // Redirect otomatis berdasarkan Role
+        const userRole = result.data.role;
+        
+        if (userRole === 'admin' || userRole === 'pharmacist') {
           navigate('/admin');
-        } else if (role === 'kurir') {
-          navigate('/courier'); // Arahkan ke dashboard kurir yang baru
+        } else if (userRole === 'kasir') {
+          navigate('/cashier');
+        } else if (userRole === 'kurir') {
+          navigate('/courier');
         } else {
-          navigate('/');
+          navigate('/'); // Customer default ke beranda
         }
       } else {
-        setErrorMsg(result.message || 'Login gagal. Periksa kembali kredensial Anda.');
+        setError(result.message || 'Email atau password salah.');
       }
-    } catch (error) {
-      setErrorMsg('Terjadi kesalahan saat terhubung ke server.');
+    } catch (err) {
+      setError('Terjadi kesalahan pada server. Coba lagi nanti.');
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#F2F7F5] flex items-center justify-center p-4 antialiased">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,#ccfbf1_0%,transparent_40%),radial-gradient(circle_at_20%_80%,#d1fae5_0%,transparent_40%)] pointer-events-none"></div>
-      
-      <div className="w-full max-w-md bg-white rounded-[2rem] p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 relative z-10">
-        <div className="text-center mb-8">
-          <Link to="/" className="inline-flex items-center gap-2 mb-4">
-            <div className="bg-apx-dark text-apx-brand w-10 h-10 rounded-full flex items-center justify-center shadow-md">
-              <i className="fa-solid fa-notes-medical text-xl"></i>
+    <div className="min-h-screen bg-[#F4F7F6] flex items-center justify-center p-4 antialiased text-slate-800">
+      <div className="bg-white max-w-md w-full rounded-3xl shadow-xl overflow-hidden border border-gray-100">
+        <div className="p-8 sm:p-10">
+          <div className="flex justify-center mb-8">
+            <div className="bg-apx-dark text-apx-brand w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shadow-lg">
+              <i className="fa-solid fa-pills"></i>
             </div>
-            <span className="font-extrabold text-2xl tracking-tight text-apx-dark">Siresep.</span>
-          </Link>
-          <h1 className="text-2xl font-extrabold text-apx-dark">Selamat Datang</h1>
-          <p className="text-sm text-gray-500 font-medium mt-1">Masuk untuk melanjutkan ke akun Anda</p>
+          </div>
+          
+          <h2 className="text-2xl font-extrabold text-center text-apx-dark mb-2">Selamat Datang di Siresep</h2>
+          <p className="text-sm text-gray-500 text-center font-medium mb-8">
+            Silakan masuk untuk melanjutkan ke akun Anda
+          </p>
+
+          {error && (
+            <div className="bg-rose-50 border border-rose-200 text-rose-600 px-4 py-3 rounded-xl text-sm font-bold mb-6 flex items-center gap-2">
+              <i className="fa-solid fa-circle-exclamation"></i>
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleLogin} className="space-y-5">
+            <div>
+              <label className="block text-xs font-extrabold text-gray-500 uppercase tracking-wider mb-1.5">
+                Alamat Email
+              </label>
+              <div className="relative">
+                <i className="fa-solid fa-envelope absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 pl-11 pr-4 focus:outline-none focus:bg-white focus:border-apx-brand font-medium transition-colors"
+                  placeholder="admin@siresep.com"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-extrabold text-gray-500 uppercase tracking-wider mb-1.5">
+                Password
+              </label>
+              <div className="relative">
+                <i className="fa-solid fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                <input
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 pl-11 pr-4 focus:outline-none focus:bg-white focus:border-apx-brand font-medium transition-colors"
+                  placeholder="••••••••"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full bg-apx-brand hover:bg-opacity-90 text-apx-dark font-extrabold py-3.5 rounded-xl transition-all shadow-md mt-4 disabled:opacity-50 flex justify-center items-center gap-2"
+            >
+              {isLoading ? (
+                <>
+                  <i className="fa-solid fa-circle-notch fa-spin"></i> Memproses...
+                </>
+              ) : (
+                <>
+                  Masuk Sekarang <i className="fa-solid fa-arrow-right ml-1"></i>
+                </>
+              )}
+            </button>
+          </form>
+
+          <p className="text-center text-sm font-medium text-gray-500 mt-8">
+            Belum punya akun?{' '}
+            <Link to="/register" className="text-apx-dark font-extrabold hover:text-apx-brand transition-colors">
+              Daftar di sini
+            </Link>
+          </p>
         </div>
-
-        {errorMsg && (
-          <div className="bg-rose-50 border border-rose-100 text-rose-600 px-4 py-3 rounded-xl text-sm font-bold mb-6 flex items-center gap-2">
-            <i className="fa-solid fa-circle-exclamation"></i>
-            {errorMsg}
-          </div>
-        )}
-
-        <form onSubmit={handleLogin} className="space-y-5">
-          <div>
-            <label className="block text-sm font-bold text-apx-dark mb-2">Email Address</label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-                <i className="fa-regular fa-envelope text-gray-400"></i>
-              </div>
-              <input 
-                type="email" 
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-200 text-apx-dark rounded-xl pl-11 pr-4 py-3 focus:outline-none focus:bg-white focus:border-apx-brand focus:ring-1 focus:ring-apx-brand transition-all font-medium" 
-                placeholder="nama@email.com" 
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-bold text-apx-dark mb-2">Password</label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-                <i className="fa-solid fa-lock text-gray-400"></i>
-              </div>
-              <input 
-                type="password" 
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-200 text-apx-dark rounded-xl pl-11 pr-4 py-3 focus:outline-none focus:bg-white focus:border-apx-brand focus:ring-1 focus:ring-apx-brand transition-all font-medium" 
-                placeholder="••••••••" 
-              />
-            </div>
-          </div>
-
-          <button 
-            type="submit" 
-            disabled={isLoading}
-            className="w-full bg-apx-dark hover:bg-gray-800 text-white py-3.5 rounded-xl font-extrabold shadow-lg transition-all flex items-center justify-center gap-2 mt-2 disabled:opacity-70 disabled:cursor-not-allowed"
-          >
-            {isLoading ? <i className="fa-solid fa-circle-notch fa-spin"></i> : 'Masuk Sistem'}
-          </button>
-        </form>
-
-        <p className="text-center text-sm font-medium text-gray-500 mt-8">
-          Belum punya akun? <Link to="/register" className="text-apx-brandDark font-bold hover:underline">Daftar sekarang</Link>
-        </p>
       </div>
     </div>
   );

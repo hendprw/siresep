@@ -226,7 +226,7 @@ app.put('/api/orders/:id/status', async (req, res) => {
   }
 });
 
-// ENDPOINT BARU: KURIR AMBIL TUGAS
+// ENDPOINT: KURIR AMBIL TUGAS
 app.put('/api/orders/:id/take-task', async (req, res) => {
   const { id } = req.params;
   const { driver_name, driver_vehicle } = req.body;
@@ -248,7 +248,7 @@ app.put('/api/orders/:id/take-task', async (req, res) => {
   }
 });
 
-// ENDPOINT BARU: KURIR SELESAIKAN PESANAN
+// ENDPOINT: KURIR SELESAIKAN PESANAN
 app.put('/api/orders/:id/complete-task', async (req, res) => {
   const { id } = req.params;
   try {
@@ -280,6 +280,48 @@ app.delete('/api/orders/:id', async (req, res) => {
     res.status(200).json({ status: 'success' });
   } catch (error) {
     res.status(500).json({ status: 'error', message: 'Gagal menghapus pesanan' });
+  }
+});
+
+// ==========================================
+// ENDPOINT KHUSUS: KASIR (POS SYSTEM)
+// ==========================================
+app.post('/api/cashier/orders', async (req, res) => {
+  const { cashier_id, customer_name, payment_method, total_price, items } = req.body;
+  try {
+    const orderId = `#POS-${Math.floor(1000 + Math.random() * 9000)}`;
+    const parsedItems = typeof items === 'string' ? JSON.parse(items) : items;
+
+    // 1. Simpan transaksi langsung selesai ke database orders
+    const result = await query(
+      `INSERT INTO orders (order_id, user_id, customer_name, delivery_address, delivery_type, status, payment_status, total_amount, total_price, items) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+      [
+        orderId, cashier_id || null, customer_name || 'Pelanggan Offline', payment_method, 
+        'Offline', 'Pesanan Tiba', 'Lunas', total_price, total_price, JSON.stringify(parsedItems)
+      ]
+    );
+
+    // 2. Potong stok produk secara berkala sesuai keranjang POS
+    for (const item of parsedItems) {
+      await query('UPDATE products SET stock = stock - $1 WHERE id = $2', [item.quantity, item.id]);
+    }
+
+    res.status(201).json({ status: 'success', message: 'Transaksi offline berhasil diproses', data: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ status: 'error', message: 'Gagal memproses transaksi kasir: ' + error.message });
+  }
+});
+
+app.get('/api/cashier/shift-orders', async (req, res) => {
+  try {
+    // Menarik riwayat transaksi kasir khusus hari ini (shift berjalan)
+    const result = await query(
+      `SELECT * FROM orders WHERE delivery_type = 'Offline' AND created_at >= CURRENT_DATE ORDER BY created_at DESC`
+    );
+    res.status(200).json({ status: 'success', data: result.rows });
+  } catch (error) {
+    res.status(500).json({ status: 'error', message: 'Gagal memuat riwayat transaksi shift' });
   }
 });
 
