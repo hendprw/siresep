@@ -13,13 +13,8 @@ function Admin() {
   const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
   const [selectedPrescription, setSelectedPrescription] = useState(null);
   
-  // FIX ADM 4 & ADM 5: State filter rentang transaksi harian
   const [filterDate, setFilterDate] = useState('');
-
-  // FIX ADM 7: Tracker ID Pesanan untuk Otomasi Verifikasi
   const [selectedOrderIdForPrescription, setSelectedOrderIdForPrescription] = useState('');
-
-  // FIX ADM 8: State penampung Laporan Keuangan
   const [reportData, setReportData] = useState(null);
   const [loadingReport, setLoadingReport] = useState(false);
 
@@ -35,7 +30,6 @@ function Admin() {
   const user = userStr ? JSON.parse(userStr) : null;
   const serverBaseUrl = import.meta.env.VITE_API_BASE_URL.replace('/api', '');
 
-  // Ditambahkan query string untuk memfilter riwayat harian
   const fetchOrders = async (dateParam = '') => {
     setLoadingOrders(true);
     try {
@@ -60,7 +54,6 @@ function Admin() {
     finally { setLoadingProducts(false); }
   };
 
-  // Mengambil rekapan data penjualan mutlak dari database
   const fetchReport = async () => {
     setLoadingReport(true);
     try {
@@ -83,6 +76,8 @@ function Admin() {
   const handleUpdateOrderStatus = async (orderId, currentStatus) => {
     if (!orderId) return;
     let nextStatus = '';
+    
+    // Status DB tetap menggunakan standar universal untuk menjaga ekosistem tracker dan kasir
     if (currentStatus === 'Cek Resep') nextStatus = 'Sedang Diramu';
     else if (currentStatus === 'Sedang Diramu') nextStatus = 'Kurir Menuju Lokasi';
     else if (currentStatus === 'Kurir Menuju Lokasi') nextStatus = 'Pesanan Tiba';
@@ -183,6 +178,27 @@ function Admin() {
     'Obat Bebas', 'Obat Keras', 'Suplemen & Vitamin', 'Alat Kesehatan', 'Perawatan Tubuh', 'Ibu & Anak', 'Lainnya'
   ];
 
+  // =====================================================================
+  // HELPER LOGIKA VISUAL: Mengubah teks kurir menjadi teks Pickup (Ambil Sendiri)
+  // =====================================================================
+  const formatDisplayStatus = (status, deliveryType) => {
+    const isPickup = deliveryType === 'Pickup' || deliveryType === 'Ambil Sendiri';
+    if (isPickup) {
+      if (status === 'Kurir Menuju Lokasi') return 'Siap Diambil';
+      if (status === 'Pesanan Tiba') return 'Selesai Diambil';
+    }
+    return status;
+  };
+
+  const getActionText = (status, deliveryType) => {
+    const isPickup = deliveryType === 'Pickup' || deliveryType === 'Ambil Sendiri';
+    if (status === 'Pending') return 'Menunggu Bayar';
+    if (status === 'Cek Resep') return 'Mulai Diramu';
+    if (status === 'Sedang Diramu') return isPickup ? 'Set Siap Diambil' : 'Kirim dg Kurir';
+    if (status === 'Kurir Menuju Lokasi') return isPickup ? 'Set Selesai Diambil' : 'Set Pesanan Tiba';
+    return 'Ubah Status';
+  };
+
   return (
     <div className="text-slate-800 antialiased flex h-screen overflow-hidden bg-[#F4F7F6]">
       <aside className="bg-apx-dark text-white w-64 flex-shrink-0 hidden md:flex flex-col z-20 m-4 rounded-[2rem] shadow-2xl relative overflow-hidden">
@@ -202,7 +218,6 @@ function Admin() {
             <button onClick={() => setActiveTab('products')} className={`w-full group flex items-center px-4 py-3 text-sm font-bold rounded-2xl transition-all ${activeTab === 'products' ? 'bg-white/10 text-white border border-white/5 backdrop-blur-sm' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
               <i className="fa-solid fa-box-open mr-3 text-lg w-5 text-center"></i> Inventori Produk
             </button>
-            {/* Navigasi Tambahan untuk Mengakses Laporan Penjualan */}
             <button onClick={() => { setActiveTab('reports'); fetchReport(); }} className={`w-full group flex items-center px-4 py-3 text-sm font-bold rounded-2xl transition-all ${activeTab === 'reports' ? 'bg-white/10 text-white border border-white/5 backdrop-blur-sm' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
               <i className="fa-solid fa-chart-line mr-3 text-lg w-5 text-center"></i> Laporan Penjualan
             </button>
@@ -238,7 +253,6 @@ function Admin() {
             <div className="bg-white rounded-[2rem] shadow-[0_4px_20px_rgb(0,0,0,0.02)] border border-gray-100 overflow-hidden p-2">
               <div className="px-6 py-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <h2 className="font-extrabold text-lg text-apx-dark">Antrean Pesanan Masuk</h2>
-                {/* FIX ADM 4 & ADM 5: UI Komponen Datepicker untuk Filter Transaksi Harian */}
                 <div className="flex items-center gap-3 flex-wrap">
                   <input 
                     type="date" 
@@ -276,21 +290,29 @@ function Admin() {
                             <tr className="group hover:bg-gray-50 transition-colors rounded-2xl">
                               <td className="px-4 py-4 rounded-l-2xl">
                                 <span className="font-extrabold">{finalOrderId}</span><br/>
-                                <span className="text-[10px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-md mt-1 inline-block uppercase">
+                                <span className="text-[10px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-md mt-1 inline-block uppercase tracking-wider font-bold">
                                   {order.delivery_type === 'Pickup' ? 'Ambil Sendiri' : 'Diantar'}
                                 </span>
                               </td>
                               <td className="px-4 py-4">{order.customer_name}</td>
                               <td className="px-4 py-4 font-bold text-apx-brand">Rp{Number(order.total_amount).toLocaleString('id-ID')}</td>
                               <td className="px-4 py-4">
-                                <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${order.status === 'Pesanan Tiba' ? 'bg-green-100 text-green-700' : order.status === 'Kurir Menuju Lokasi' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>{order.status}</span>
+                                <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${order.status === 'Pesanan Tiba' ? 'bg-green-100 text-green-700' : order.status === 'Kurir Menuju Lokasi' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
+                                  {/* MENGGUNAKAN FUNGSI ALIAS VISUAL AGAR ADMIN TIDAK BINGUNG */}
+                                  {formatDisplayStatus(order.status, order.delivery_type)}
+                                </span>
                               </td>
                               <td className="px-4 py-4 text-right rounded-r-2xl">
                                 <div className="flex items-center justify-end gap-2">
                                   {order.prescription_image ? (
                                     <button onClick={() => openPrescriptionViewer(finalOrderId, order.prescription_image)} className="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-4 py-2 rounded-xl text-xs font-bold"><i className="fa-solid fa-eye"></i> Cek Resep</button>
                                   ) : <span className="text-[10px] text-gray-400 font-medium italic mr-2">Tanpa Resep</span>}
-                                  <button onClick={() => handleUpdateOrderStatus(finalOrderId, order.status)} disabled={order.status === 'Pesanan Tiba'} className="bg-apx-dark hover:bg-black text-white px-4 py-2 rounded-xl text-xs font-bold disabled:opacity-50">Ubah Status</button>
+                                  
+                                  {/* TEKS TOMBOL DINAMIS SESUAI TIPE PESANAN */}
+                                  <button onClick={() => handleUpdateOrderStatus(finalOrderId, order.status)} disabled={order.status === 'Pesanan Tiba'} className="bg-apx-dark hover:bg-black text-white px-4 py-2 rounded-xl text-xs font-bold disabled:opacity-50">
+                                    {getActionText(order.status, order.delivery_type)}
+                                  </button>
+
                                   <button onClick={() => handleDeleteOrder(finalOrderId)} className="bg-white border border-rose-200 text-rose-500 hover:bg-rose-50 px-3 py-2 rounded-xl text-xs font-bold"><i className="fa-solid fa-trash-can"></i></button>
                                 </div>
                               </td>
@@ -368,7 +390,6 @@ function Admin() {
             </div>
           )}
 
-          {/* FIX ADM 8: Panel Dashboard Visual Analisis Laporan Keuangan */}
           {activeTab === 'reports' && (
             <div className="bg-white rounded-[2rem] shadow-[0_4px_20px_rgb(0,0,0,0.02)] border border-gray-100 overflow-hidden p-6">
               <h2 className="font-extrabold text-lg text-apx-dark mb-4">Laporan Analisis Penjualan</h2>
@@ -430,7 +451,6 @@ function Admin() {
             <div className="bg-gray-100 rounded-2xl flex-1 overflow-auto flex items-center justify-center p-2 border border-gray-200">
               <img src={selectedPrescription} alt="Resep" className="max-w-full max-h-full object-contain rounded-xl" />
             </div>
-            {/* FIX ADM 7: Tombol interaktif untuk memproses verifikasi resep dokter */}
             <div className="mt-4 flex justify-end gap-2 shrink-0">
               <button 
                 onClick={async () => {

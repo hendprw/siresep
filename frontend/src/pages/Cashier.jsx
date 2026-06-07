@@ -13,7 +13,6 @@ function CodPaymentModal({ order, onClose, onConfirm }) {
   const change = paid - total;
   const isValid = paid >= total;
 
-  // Shortcut nominal uang
   const QUICK_AMOUNTS = [
     total,
     Math.ceil(total / 10000) * 10000,
@@ -31,7 +30,6 @@ function CodPaymentModal({ order, onClose, onConfirm }) {
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden">
-        {/* Header */}
         <div className="bg-apx-dark p-6 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-apx-brand/10 rounded-full blur-2xl"></div>
           <div className="relative z-10">
@@ -39,12 +37,11 @@ function CodPaymentModal({ order, onClose, onConfirm }) {
               COD Pickup
             </span>
             <h2 className="text-white font-extrabold text-xl mt-3">Terima Pembayaran</h2>
-            <p className="text-gray-400 text-sm font-medium mt-1">{order.order_id} • {order.customer_name}</p>
+            <p className="text-gray-400 text-sm font-medium mt-1">{order.order_id || `APTX-${order.id}`} • {order.customer_name}</p>
           </div>
         </div>
 
         <div className="p-6 space-y-5">
-          {/* Total Tagihan */}
           <div className="bg-gray-50 rounded-2xl p-4 flex justify-between items-center border border-gray-100">
             <span className="text-sm font-bold text-gray-500">Total Tagihan</span>
             <span className="font-extrabold text-2xl text-apx-dark">
@@ -52,7 +49,6 @@ function CodPaymentModal({ order, onClose, onConfirm }) {
             </span>
           </div>
 
-          {/* Input nominal uang */}
           <div>
             <label className="block text-xs font-extrabold text-gray-500 uppercase tracking-wider mb-2">
               Uang yang Diterima (Rp)
@@ -66,7 +62,6 @@ function CodPaymentModal({ order, onClose, onConfirm }) {
             />
           </div>
 
-          {/* Shortcut Nominal */}
           <div>
             <p className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-2">Nominal Cepat</p>
             <div className="grid grid-cols-2 gap-2">
@@ -87,7 +82,6 @@ function CodPaymentModal({ order, onClose, onConfirm }) {
             </div>
           </div>
 
-          {/* Kembalian */}
           <div className={`rounded-2xl p-4 transition-all ${
             paid === 0 ? 'bg-gray-50 border border-gray-100' :
             isValid ? 'bg-apx-brand/10 border-2 border-apx-brand/30' :
@@ -109,7 +103,6 @@ function CodPaymentModal({ order, onClose, onConfirm }) {
             </div>
           </div>
 
-          {/* Tombol Aksi */}
           <div className="flex gap-3 pt-2">
             <button
               type="button"
@@ -146,13 +139,14 @@ function Cashier() {
   const [shiftOrders, setShiftOrders] = useState([]);
   const [codPending, setCodPending] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [codSearchTerm, setCodSearchTerm] = useState(''); 
   const [selectedCategory, setSelectedCategory] = useState('Semua');
   const [customerName, setCustomerName] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [loading, setLoading] = useState(true);
   const [receiptData, setReceiptData] = useState(null);
-  const [codModal, setCodModal] = useState(null); // order yang sedang dibayar
-  const [cashPaid, setCashPaid] = useState(''); // untuk POS cash biasa
+  const [codModal, setCodModal] = useState(null); 
+  const [cashPaid, setCashPaid] = useState(''); 
 
   const navigate = useNavigate();
   const userStr = localStorage.getItem('siresep_user');
@@ -191,7 +185,6 @@ function Cashier() {
     fetchData();
   }, [user?.id, user?.role, navigate, fetchData]);
 
-  // ── POS Cart Handlers ──
   const handleAddToCart = (product) => {
     if (product.stock <= 0) { alert('Stok produk habis!'); return; }
     const existing = cart.find(item => item.id === product.id);
@@ -217,7 +210,6 @@ function Cashier() {
 
   const calculateTotal = () => cart.reduce((sum, item) => sum + (Number(item.price) * item.quantity), 0);
 
-  // ── POS Checkout ──
   const handleCheckout = async (e) => {
     e.preventDefault();
     if (cart.length === 0) { alert('Keranjang belanja kosong!'); return; }
@@ -225,7 +217,6 @@ function Cashier() {
     const totalPrice = calculateTotal();
     const paidAmount = Number(cashPaid);
 
-    // Validasi cash
     if (paymentMethod === 'Cash' && paidAmount < totalPrice) {
       alert(`Uang yang diterima kurang! Total: Rp${totalPrice.toLocaleString('id-ID')}`);
       return;
@@ -272,7 +263,6 @@ function Cashier() {
     }
   };
 
-  // ── COD Pickup: Konfirmasi Pembayaran ──
   const handleCodConfirm = async (orderId, amountPaid) => {
     try {
       const res = await fetch(`${baseUrl}/orders/${encodeURIComponent(orderId)}/pay`, {
@@ -311,6 +301,23 @@ function Cashier() {
     return matchesSearch && matchesCategory;
   });
 
+  // LOGIKA PENCARIAN PINTAR YANG DIPERBAIKI (Toleransi Prefix APTX-)
+  const filteredCodPending = codPending.filter(order => {
+    const search = codSearchTerm.toLowerCase().trim();
+    
+    // Ambil ID murni dari database (misal: '6135')
+    const dbId = String(order.order_id || order.id).toLowerCase();
+    
+    // Buat bentuk alternatif yang memiliki prefix (misal: 'aptx-6135')
+    const formattedId = dbId.startsWith('aptx-') ? dbId : `aptx-${dbId}`;
+    
+    // Cocokkan jika kata kunci mengandung bagian dari dbId ATAU formattedId
+    const orderIdMatch = dbId.includes(search) || formattedId.includes(search);
+    const nameMatch = (order.customer_name || '').toLowerCase().includes(search);
+    
+    return orderIdMatch || nameMatch;
+  });
+
   const posTotal = calculateTotal();
   const posChange = paymentMethod === 'Cash' && Number(cashPaid) >= posTotal
     ? Number(cashPaid) - posTotal : 0;
@@ -319,7 +326,6 @@ function Cashier() {
   return (
     <div className="text-slate-800 antialiased bg-[#F4F7F6] min-h-screen flex flex-col print:bg-white print:text-black">
 
-      {/* ── HEADER ── */}
       <nav className="bg-white border-b border-gray-200 py-4 px-6 sticky top-0 z-50 shadow-sm flex items-center justify-between print:hidden">
         <div className="flex items-center gap-3">
           <div className="bg-apx-dark text-apx-brand w-10 h-10 rounded-xl flex items-center justify-center text-lg shadow-md">
@@ -332,13 +338,11 @@ function Cashier() {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap justify-end">
-          {/* Tab POS */}
           <button onClick={() => setActiveTab('pos')}
             className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'pos' ? 'bg-apx-dark text-white' : 'text-gray-500 hover:bg-gray-100'}`}>
             <i className="fa-solid fa-grip mr-2"></i>Mesin POS
           </button>
 
-          {/* Tab COD dengan badge */}
           <button onClick={() => setActiveTab('cod')}
             className={`relative px-4 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'cod' ? 'bg-orange-500 text-white' : 'text-gray-500 hover:bg-gray-100'}`}>
             <i className="fa-solid fa-hand-holding-dollar mr-2"></i>Tagihan COD
@@ -349,7 +353,6 @@ function Cashier() {
             )}
           </button>
 
-          {/* Tab Riwayat */}
           <button onClick={() => setActiveTab('shift')}
             className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'shift' ? 'bg-apx-dark text-white' : 'text-gray-500 hover:bg-gray-100'}`}>
             <i className="fa-solid fa-clock-rotate-left mr-2"></i>Riwayat Shift
@@ -361,7 +364,6 @@ function Cashier() {
         </div>
       </nav>
 
-      {/* ── WORKSPACE ── */}
       <div className="flex-1 p-6 max-w-[1600px] w-full mx-auto print:p-0">
         {loading ? (
           <div className="flex flex-col items-center justify-center h-[60vh]">
@@ -370,12 +372,7 @@ function Cashier() {
           </div>
         ) : activeTab === 'pos' ? (
 
-          /* ════════════════════════════════
-             TAB 1: MESIN POS
-          ════════════════════════════════ */
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 print:hidden">
-
-            {/* Kolom Kiri: Produk */}
             <div className="lg:col-span-7 flex flex-col gap-4">
               <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-4">
                 <div className="relative">
@@ -417,14 +414,12 @@ function Cashier() {
               </div>
             </div>
 
-            {/* Kolom Kanan: Checkout */}
             <div className="lg:col-span-5">
               <form onSubmit={handleCheckout} className="bg-white rounded-3xl border border-gray-100 shadow-md p-6 flex flex-col max-h-[calc(100vh-140px)] sticky top-24">
                 <h2 className="font-extrabold text-lg text-apx-dark mb-4 pb-2 border-b border-gray-100">
                   <i className="fa-solid fa-basket-shopping text-apx-brand mr-2"></i>Item Penjualan
                 </h2>
 
-                {/* Cart Items */}
                 <div className="flex-1 overflow-y-auto space-y-3 mb-4 pr-1 min-h-[180px]">
                   {cart.length === 0 ? (
                     <div className="text-center py-10 text-gray-400 font-medium text-sm space-y-2">
@@ -455,7 +450,6 @@ function Cashier() {
                 </div>
 
                 <div className="space-y-3 border-t border-gray-100 pt-4">
-                  {/* Nama Pembeli */}
                   <div>
                     <label className="block text-xs font-extrabold text-gray-500 uppercase tracking-wider mb-1">Nama Pembeli (Opsional)</label>
                     <input type="text" placeholder="Pelanggan Umum" value={customerName}
@@ -463,7 +457,6 @@ function Cashier() {
                       className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:bg-white focus:border-apx-brand font-medium text-sm" />
                   </div>
 
-                  {/* Metode Bayar */}
                   <div>
                     <label className="block text-xs font-extrabold text-gray-500 uppercase tracking-wider mb-1">Metode Pembayaran</label>
                     <div className="grid grid-cols-2 gap-3">
@@ -478,7 +471,6 @@ function Cashier() {
                     </div>
                   </div>
 
-                  {/* Input Uang Diterima — hanya jika Cash */}
                   {paymentMethod === 'Cash' && (
                     <div className="space-y-2">
                       <div>
@@ -487,7 +479,6 @@ function Cashier() {
                           value={cashPaid} onChange={(e) => setCashPaid(e.target.value)}
                           className="w-full bg-gray-50 border-2 border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:bg-white focus:border-apx-brand font-extrabold text-base transition-all" />
                       </div>
-                      {/* Shortcut nominal */}
                       {posTotal > 0 && (
                         <div className="flex gap-2 flex-wrap">
                           {[posTotal, Math.ceil(posTotal / 10000) * 10000, Math.ceil(posTotal / 50000) * 50000].filter((v, i, a) => a.indexOf(v) === i).map(amt => (
@@ -498,7 +489,6 @@ function Cashier() {
                           ))}
                         </div>
                       )}
-                      {/* Kembalian */}
                       {Number(cashPaid) > 0 && (
                         <div className={`rounded-xl p-3 flex justify-between items-center text-sm font-extrabold border ${posIsValid ? 'bg-apx-brand/10 border-apx-brand/30 text-apx-dark' : 'bg-rose-50 border-rose-200 text-rose-600'}`}>
                           <span>{posIsValid ? '✓ Kembalian' : '✗ Kurang'}</span>
@@ -508,13 +498,11 @@ function Cashier() {
                     </div>
                   )}
 
-                  {/* Total */}
                   <div className="bg-gray-50 rounded-2xl p-4 flex items-center justify-between border border-gray-100 my-2">
                     <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Total Pembayaran</span>
                     <span className="font-extrabold text-xl text-apx-brand">Rp{posTotal.toLocaleString('id-ID')}</span>
                   </div>
 
-                  {/* Tombol Bayar */}
                   <button type="submit" disabled={cart.length === 0 || !posIsValid}
                     className="w-full bg-apx-brand hover:bg-opacity-90 text-apx-dark font-extrabold py-3.5 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                     <i className="fa-solid fa-print"></i> Selesaikan & Cetak Struk
@@ -526,48 +514,64 @@ function Cashier() {
 
         ) : activeTab === 'cod' ? (
 
-          /* ════════════════════════════════
-             TAB 2: TAGIHAN COD PICKUP
-          ════════════════════════════════ */
           <div className="print:hidden space-y-4">
-            {/* Header info */}
-            <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5 flex items-start gap-4">
-              <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center text-orange-600 text-xl shrink-0">
-                <i className="fa-solid fa-hand-holding-dollar"></i>
+            <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center text-orange-600 text-xl shrink-0">
+                  <i className="fa-solid fa-hand-holding-dollar"></i>
+                </div>
+                <div>
+                  <h2 className="font-extrabold text-orange-800 text-base">Tagihan COD Menunggu Pembayaran</h2>
+                  <p className="text-sm text-orange-600 font-medium mt-0.5">
+                    Gunakan pencarian untuk memindai Order ID (Barcode) dari aplikasi pelanggan.
+                  </p>
+                </div>
               </div>
-              <div>
-                <h2 className="font-extrabold text-orange-800 text-base">Tagihan COD Menunggu Pembayaran</h2>
-                <p className="text-sm text-orange-600 font-medium mt-0.5">
-                  Daftar pesanan online yang memilih COD dan belum melunasi pembayaran. Klik <strong>"Terima Pembayaran"</strong> saat customer Pickup membayar di kasir.
-                  <br />
-                  <span className="text-xs italic mt-1 block text-orange-500">Untuk COD Delivery, kurir yang menandai lunas langsung dari aplikasinya.</span>
-                </p>
+              
+              <div className="w-full md:w-80 relative">
+                <i className="fa-solid fa-barcode absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                <input 
+                  type="text" 
+                  placeholder="Scan Barcode / Ketik Order ID..."
+                  value={codSearchTerm}
+                  onChange={(e) => setCodSearchTerm(e.target.value)}
+                  className="w-full bg-white border border-orange-200 rounded-xl pl-12 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-orange-500 font-extrabold text-sm shadow-sm"
+                  autoFocus 
+                />
               </div>
             </div>
 
-            {codPending.length === 0 ? (
+            {filteredCodPending.length === 0 ? (
               <div className="bg-white rounded-3xl p-12 text-center shadow-sm border border-gray-100">
                 <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4">
                   <i className="fa-solid fa-circle-check text-3xl text-green-400"></i>
                 </div>
-                <h3 className="font-extrabold text-lg mb-1 text-apx-dark">Semua Tagihan Lunas!</h3>
-                <p className="text-sm text-gray-400 font-medium">Tidak ada pesanan COD yang menunggu pembayaran saat ini.</p>
-                <button onClick={fetchData} className="mt-4 bg-gray-50 hover:bg-gray-100 px-5 py-2 rounded-xl text-sm font-bold border border-gray-200 text-gray-600">
-                  <i className="fa-solid fa-rotate-right mr-1"></i> Refresh
-                </button>
+                <h3 className="font-extrabold text-lg mb-1 text-apx-dark">
+                  {codSearchTerm ? 'Pesanan Tidak Ditemukan' : 'Semua Tagihan Lunas!'}
+                </h3>
+                <p className="text-sm text-gray-400 font-medium">
+                  {codSearchTerm ? 'Pastikan Order ID atau Barcode yang dipindai sudah benar.' : 'Tidak ada pesanan COD yang menunggu pembayaran saat ini.'}
+                </p>
+                {!codSearchTerm && (
+                  <button onClick={fetchData} className="mt-4 bg-gray-50 hover:bg-gray-100 px-5 py-2 rounded-xl text-sm font-bold border border-gray-200 text-gray-600">
+                    <i className="fa-solid fa-rotate-right mr-1"></i> Refresh
+                  </button>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {codPending.map(order => {
+                {filteredCodPending.map(order => {
                   let parsedItems = [];
                   try { parsedItems = JSON.parse(order.items || '[]'); } catch { parsedItems = []; }
                   const isPickupOrder = order.delivery_type === 'Pickup' || (order.delivery_address || '').toLowerCase().includes('ambil');
+
+                  // Gunakan order.order_id jika ada, jika tidak format ID numeriknya dengan APTX-
+                  const displayOrderId = order.order_id || `APTX-${order.id}`;
 
                   return (
                     <div key={order.order_id || order.id}
                       className={`bg-white rounded-3xl p-5 border-2 shadow-sm flex flex-col gap-4 transition-all hover:shadow-md ${isPickupOrder ? 'border-orange-100 hover:border-orange-300' : 'border-blue-100 hover:border-blue-300'}`}>
 
-                      {/* Header Card */}
                       <div className="flex justify-between items-start">
                         <div>
                           <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-full uppercase tracking-widest ${isPickupOrder ? 'bg-orange-50 text-orange-600 border border-orange-200' : 'bg-blue-50 text-blue-600 border border-blue-200'}`}>
@@ -575,14 +579,15 @@ function Cashier() {
                             {isPickupOrder ? 'Pickup' : 'COD Delivery'}
                           </span>
                           <h3 className="font-extrabold text-apx-dark text-base mt-2">{order.customer_name}</h3>
-                          <p className="text-xs text-gray-400 font-bold">{order.order_id}</p>
+                          <p className="text-xs text-gray-400 font-bold bg-gray-50 inline-block px-2 py-0.5 rounded mt-1 border border-gray-100">
+                            {displayOrderId}
+                          </p>
                         </div>
                         <span className="font-extrabold text-lg text-apx-dark">
                           Rp{Number(order.total_amount).toLocaleString('id-ID')}
                         </span>
                       </div>
 
-                      {/* Items Preview */}
                       {parsedItems.length > 0 && (
                         <div className="bg-gray-50 rounded-xl p-3 space-y-1.5">
                           {parsedItems.slice(0, 3).map((item, idx) => (
@@ -597,7 +602,6 @@ function Cashier() {
                         </div>
                       )}
 
-                      {/* Status & Aksi */}
                       <div className="mt-auto">
                         <div className="flex justify-between items-center mb-3">
                           <span className="text-xs font-bold text-gray-400">Status Pesanan:</span>
@@ -610,14 +614,12 @@ function Cashier() {
                         </div>
 
                         {isPickupOrder ? (
-                          // Kasir yang handle Pickup
                           <button
                             onClick={() => setCodModal(order)}
                             className="w-full bg-orange-500 hover:bg-orange-600 text-white font-extrabold py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2">
                             <i className="fa-solid fa-hand-holding-dollar"></i> Terima Pembayaran
                           </button>
                         ) : (
-                          // COD Delivery → Kurir yang handle
                           <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
                             <p className="text-xs font-bold text-blue-600">
                               <i className="fa-solid fa-motorcycle mr-1"></i>
@@ -636,9 +638,6 @@ function Cashier() {
 
         ) : (
 
-          /* ════════════════════════════════
-             TAB 3: RIWAYAT SHIFT
-          ════════════════════════════════ */
           <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm print:hidden">
             <div className="flex items-center justify-between mb-6">
               <div>
@@ -668,8 +667,8 @@ function Cashier() {
                     </tr>
                   ) : (
                     shiftOrders.map(order => (
-                      <tr key={order.order_id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                        <td className="px-4 py-4 font-extrabold text-xs text-slate-900">{order.order_id}</td>
+                      <tr key={order.order_id || order.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                        <td className="px-4 py-4 font-extrabold text-xs text-slate-900">{order.order_id || `APTX-${order.id}`}</td>
                         <td className="px-4 py-4">{order.customer_name}</td>
                         <td className="px-4 py-4">
                           <span className="bg-gray-100 text-gray-700 px-2.5 py-1 rounded-md text-xs font-bold">{order.payment_method || 'Cash'}</span>
@@ -688,7 +687,6 @@ function Cashier() {
         )}
       </div>
 
-      {/* ── MODAL COD PICKUP ── */}
       {codModal && (
         <CodPaymentModal
           order={codModal}
@@ -697,7 +695,6 @@ function Cashier() {
         />
       )}
 
-      {/* ── STRUK PRINT (80MM THERMAL) ── */}
       {receiptData && (
         <div className="hidden print:block p-4 w-[76mm] text-xs font-mono bg-white text-black mx-auto">
           <div className="text-center space-y-1 border-b border-dashed border-black pb-3">

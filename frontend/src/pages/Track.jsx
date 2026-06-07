@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import Barcode from 'react-barcode';
 
 function Track() {
   const location = useLocation();
@@ -240,13 +241,22 @@ function Track() {
                     : 'Apoteker kami sedang memproses resep/obat Anda. Mohon tunggu hingga status berubah menjadi "Siap Diambil".'}
                 </p>
 
+                {/* FIX: BARCODE DAN TEKS DIBAWAHNYA DIPASTIKAN MENGANDUNG PREFIX 'APTX-' */}
                 <div className="bg-gray-50 border border-gray-200 border-dashed rounded-2xl p-6 inline-block mx-auto mb-4">
-                  <div className="flex gap-1 items-center justify-center h-14 bg-white px-8 rounded-lg shadow-inner mb-2 overflow-hidden opacity-80">
-                    {[3,1,4,2,1,4,2,3,1,2,4,1,3,2,1,4,2,1,3,2,4].map((v, i) => (
-                      <div key={i} className="bg-apx-dark h-full" style={{ width: `${v}px` }}></div>
-                    ))}
+                  <div className="bg-white p-3 rounded-lg shadow-inner mb-2 flex justify-center overflow-hidden">
+                    <Barcode 
+                      value={selectedOrder.order_id || `APTX-${selectedOrder.id}`} 
+                      width={1.8} 
+                      height={50} 
+                      displayValue={false} 
+                      background="transparent" 
+                      lineColor="#021B19" 
+                      margin={0}
+                    />
                   </div>
-                  <span className="font-mono text-xs font-bold text-gray-500 tracking-widest">{selectedOrder.order_id || selectedOrder.id}</span>
+                  <span className="font-mono text-sm font-extrabold text-apx-dark tracking-widest uppercase">
+                    {selectedOrder.order_id || `APTX-${selectedOrder.id}`}
+                  </span>
                 </div>
 
                 <div className="text-left bg-teal-50/50 border border-teal-100 rounded-2xl p-5 mt-2">
@@ -259,20 +269,58 @@ function Track() {
                 </div>
               </div>
             ) : (
-              <div className="w-full h-64 bg-white rounded-[2rem] border border-gray-100 shadow-sm overflow-hidden relative group">
-                <div className="absolute inset-0 map-bg opacity-50 bg-slate-100"></div>
-                <svg className="absolute inset-0 w-full h-full pointer-events-none" preserveAspectRatio="none">
-                  <path d="M 100,200 Q 250,150 400,100 T 700,50" fill="none" stroke="#00D084" strokeWidth="4" strokeDasharray="8 8" className="opacity-60"></path>
-                </svg>
-                <div className="absolute bottom-10 left-1/4 w-12 h-12 bg-white rounded-full shadow-lg flex items-center justify-center text-apx-dark text-xl border-4 border-gray-50">
-                  <i className="fa-solid fa-store"></i>
+              <div className="bg-white rounded-[2rem] border border-gray-100 p-8 shadow-sm relative overflow-hidden group">
+                <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-blue-400 to-apx-brand"></div>
+                <h2 className="text-xl font-extrabold mb-1 text-center text-apx-dark">Status Pengiriman Instan</h2>
+                <p className="text-xs font-bold text-gray-400 text-center mb-8 uppercase tracking-widest">Pantau Perjalanan Pesanan Anda</p>
+                
+                <div className="relative flex items-center justify-between mt-8 mb-4 px-4 sm:px-10">
+                  <div className="absolute left-10 right-10 top-1/2 -translate-y-1/2 h-1.5 bg-gray-100 rounded-full"></div>
+                  
+                  <div className={`absolute left-10 top-1/2 -translate-y-1/2 h-1.5 bg-apx-brand rounded-full transition-all duration-1000 ${
+                    selectedOrder.status === 'Pesanan Tiba' ? 'w-[calc(100%-5rem)]' : 
+                    selectedOrder.status === 'Kurir Menuju Lokasi' ? 'w-1/2' : 'w-0'
+                  }`}></div>
+
+                  <div className="relative z-10 flex flex-col items-center gap-2">
+                    <div className="w-14 h-14 rounded-full bg-apx-dark text-white flex items-center justify-center text-xl shadow-md border-4 border-white">
+                      <i className="fa-solid fa-store"></i>
+                    </div>
+                    <span className="text-xs font-bold text-gray-500">Apotek</span>
+                  </div>
+
+                  <div className={`relative z-10 flex flex-col items-center gap-2 transition-transform duration-1000 ${selectedOrder.status === 'Kurir Menuju Lokasi' ? 'scale-110' : ''}`}>
+                    <div className={`w-16 h-16 rounded-full flex items-center justify-center text-2xl shadow-lg border-4 border-white transition-colors duration-500 ${
+                      selectedOrder.status === 'Kurir Menuju Lokasi' ? 'bg-apx-brand text-apx-dark animate-bounce' : 
+                      selectedOrder.status === 'Pesanan Tiba' ? 'bg-apx-brand text-apx-dark' : 'bg-gray-100 text-gray-300'
+                    }`}>
+                      <i className="fa-solid fa-motorcycle"></i>
+                    </div>
+                    <span className={`text-xs font-bold ${selectedOrder.status === 'Kurir Menuju Lokasi' ? 'text-apx-brand' : 'text-gray-400'}`}>
+                      {selectedOrder.status === 'Pesanan Tiba' ? 'Selesai' : 'Di Perjalanan'}
+                    </span>
+                  </div>
+
+                  <div className="relative z-10 flex flex-col items-center gap-2">
+                    <div className={`w-14 h-14 rounded-full flex items-center justify-center text-xl shadow-md border-4 border-white transition-colors duration-500 ${
+                      selectedOrder.status === 'Pesanan Tiba' ? 'bg-apx-dark text-white' : 'bg-gray-100 text-gray-300'
+                    }`}>
+                      <i className="fa-solid fa-house"></i>
+                    </div>
+                    <span className="text-xs font-bold text-gray-500">Tujuan</span>
+                  </div>
                 </div>
-                <div className="absolute top-1/4 right-1/4 w-12 h-12 bg-apx-brand rounded-full shadow-lg flex items-center justify-center text-white text-xl border-4 border-white animate-bounce">
-                  <i className="fa-solid fa-motorcycle"></i>
-                </div>
-                <div className="absolute bottom-4 right-4 bg-white/90 backdrop-blur-sm px-4 py-2 rounded-xl text-sm font-bold text-apx-dark shadow-sm border border-gray-100 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-apx-brand animate-pulse"></span>
-                  {selectedOrder.status === 'Kurir Menuju Lokasi' ? 'Kurir melaju ke lokasi Anda' : selectedOrder.status === 'Pending' ? 'Menunggu Pembayaran' : 'Menunggu kurir berangkat'}
+
+                <div className="text-center mt-10">
+                  <span className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-extrabold uppercase tracking-wide border ${
+                    selectedOrder.status === 'Kurir Menuju Lokasi' ? 'bg-blue-50 text-blue-700 border-blue-100' : 
+                    selectedOrder.status === 'Pesanan Tiba' ? 'bg-green-50 text-green-700 border-green-100' : 'bg-gray-50 text-gray-500 border-gray-200'
+                  }`}>
+                    {selectedOrder.status === 'Kurir Menuju Lokasi' ? <><i className="fa-solid fa-location-crosshairs fa-spin"></i> Kurir melaju ke lokasi Anda</> : 
+                     selectedOrder.status === 'Pesanan Tiba' ? <><i className="fa-solid fa-check-circle"></i> Pesanan telah sampai di tujuan</> : 
+                     selectedOrder.status === 'Pending' ? <><i className="fa-solid fa-clock"></i> Menunggu Pembayaran</> : 
+                     <><i className="fa-solid fa-box-open"></i> Menunggu kurir berangkat</>}
+                  </span>
                 </div>
               </div>
             )}
@@ -343,7 +391,6 @@ function Track() {
             </div>
           </div>
 
-          {/* SISI KANAN: FIX BUG 2 INFO KURIR DINAMIS BERDASARKAN DATABASE (TIDAK HARDCODED LAGI) */}
           <div className="space-y-6">
             
             {isPickup ? (
